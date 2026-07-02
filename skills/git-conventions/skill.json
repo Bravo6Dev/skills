@@ -1,0 +1,6 @@
+{
+  "name": "git-conventions",
+  "version": "1.0.0",
+  "description": "Git branching, commit message, and pull request conventions",
+  "supportedAgents": ["claude-code", "cursor"]
+}
