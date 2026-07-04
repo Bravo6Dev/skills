@@ -58,9 +58,10 @@ npx skills add Bravo6Dev/skills --global
 
 ## Available Skills
 
-| Skill             | Description                                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| `git-conventions` | Git branching strategy, commit message conventions, pull request workflow, and repository hygiene rules. |
+| Skill                | Description                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `git-conventions`    | Git branching strategy, commit message conventions, pull request workflow, and repository hygiene rules. |
+| `react-architecture` | React project architecture and folder structure conventions.                                             |
 
 ---
 
