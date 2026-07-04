@@ -21,7 +21,7 @@ npx skills add Bravo6Dev/skills
 Install a single skill:
 
 ```bash
-npx skills add Bravo6Dev/skills --skill git-conventions
+npx skills add Bravo6Dev/skills --skill <skill-name>
 ```
 
 Example:
@@ -37,13 +37,13 @@ npx skills add Bravo6Dev/skills --skill git-conventions
 If multiple agents are supported, specify the target agent explicitly:
 
 ```bash
-npx skills add Bravo6Dev/skills --skill git-conventions --agent claude-code
+npx skills add Bravo6Dev/skills --skill <skill-name> --agent <agent-name>
 ```
 
-or
+Example:
 
 ```bash
-npx skills add Bravo6Dev/skills --skill git-conventions --agent cursor
+npx skills add Bravo6Dev/skills --skill git-conventions --agent claude-code
 ```
 
 ## Install Globally
