@@ -1,152 +1,133 @@
 # Command Slice Templates
 
-Files go in `src/Application/{Feature}/{UseCase}/`. Replace `{Feature}` (plural, e.g. `Todos`), `{Entity}` (e.g. `TodoItem`), and use-case names throughout.
+Files go in `Application/Features/{Feature}/{UseCase}/`. Replace `{Feature}` (plural, e.g. `Todos`), `{Entity}` (e.g. `TodoItem`), and use-case names throughout.
 
 ## Command
 
 Positional record for few parameters:
 
 ```csharp
-using Application.Abstractions.Messaging;
+using ErrorOr;
+using MediatR;
 
-namespace Application.Todos.Archive;
+namespace Application.Features.Todos.Archive;
 
-public sealed record ArchiveTodoCommand(Guid TodoItemId) : ICommand;
+public sealed record ArchiveTodoCommand(Guid TodoItemId, Guid UserId) : IRequest<ErrorOr<Unit>>;
 ```
 
-Class with init-style setters when there are many parameters (matches `CreateTodoCommand`):
+Record with `init`-only properties when there are many parameters (matches `CreateTodoCommand`):
 
 ```csharp
-using Application.Abstractions.Messaging;
-using Domain.Todos;
+using ErrorOr;
+using MediatR;
 
-namespace Application.Todos.Create;
+namespace Application.Features.Todos.Create;
 
-public sealed class CreateTodoCommand : ICommand<Guid>
+public sealed record CreateTodoCommand : IRequest<ErrorOr<Guid>>
 {
-    public Guid UserId { get; set; }
-    public string Description { get; set; }
-    public DateTime? DueDate { get; set; }
-    public List<string> Labels { get; set; } = [];
-    public Priority Priority { get; set; }
+    public Guid UserId { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public DateTime? DueDate { get; init; }
+    public List<string> Labels { get; init; } = [];
+    public int Priority { get; init; }
 }
 ```
 
-- `ICommand` → handler returns `Result` (endpoint responds `204 NoContent`).
-- `ICommand<TResponse>` → handler returns `Result<TResponse>` (endpoint responds `200 Ok`).
+- `IRequest<ErrorOr<Unit>>` → endpoint responds `204 NoContent` (see `references/endpoint.md`).
+- `IRequest<ErrorOr<TResponse>>` → endpoint responds `200 Ok` with the value.
+- `UserId` (or similar) is a plain field the *endpoint* fills in from `httpContext.User.GetUserId()` — see [Deliberate differences](../SKILL.md#deliberate-differences-from-the-icommandiqueryresult-style-template) in SKILL.md for why there's no injected current-user service.
 
 ## Validator
 
-Public class, same folder. Auto-registered and executed by `ValidationDecorator` before the handler runs.
+Public class, same folder. Auto-registered (`AddValidatorsFromAssembly`) and run automatically by the `ValidationBehavior<,>` MediatR pipeline behavior before the handler executes.
 
 ```csharp
+using Domain.Errors;
 using FluentValidation;
 
-namespace Application.Todos.Create;
+namespace Application.Features.Todos.Create;
 
-public class CreateTodoCommandValidator : AbstractValidator<CreateTodoCommand>
+public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCommand>
 {
     public CreateTodoCommandValidator()
     {
-        RuleFor(c => c.UserId).NotEmpty();
-        RuleFor(c => c.Priority).IsInEnum();
-        RuleFor(c => c.Description).NotEmpty().MaximumLength(255);
-        RuleFor(c => c.DueDate).GreaterThanOrEqualTo(DateTime.Today).When(x => x.DueDate.HasValue);
+        RuleFor(c => c.UserId).NotEmpty().WithErrorCode(TodoErrors.Codes.UserIdRequired);
+        RuleFor(c => c.Description).NotEmpty().MaximumLength(255).WithErrorCode(TodoErrors.Codes.DescriptionRequired);
+        RuleFor(c => c.DueDate).GreaterThanOrEqualTo(DateTime.Today).When(c => c.DueDate.HasValue)
+            .WithErrorCode(TodoErrors.Codes.DueDateInPast);
     }
 }
 ```
 
 ## Handler
 
-`internal sealed`, primary constructor, `IApplicationDbContext` for data access. Guard clauses return `Result.Failure` with Domain errors; the happy path mutates, raises a domain event, saves, and returns.
+`public sealed class` with a primary constructor, `IAppDbContext` for data access. Guard clauses return the appropriate `{Entity}Errors` member; the happy path mutates, saves, and returns.
 
 ```csharp
-using Application.Abstractions.Authentication;
-using Application.Abstractions.Data;
-using Application.Abstractions.Messaging;
-using Domain.Todos;
+using Application.Interface.Data;
+using Domain.Entities;
+using Domain.Errors;
+using ErrorOr;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
 
-namespace Application.Todos.Archive;
+namespace Application.Features.Todos.Archive;
 
-internal sealed class ArchiveTodoCommandHandler(
-    IApplicationDbContext context,
-    IDateTimeProvider dateTimeProvider,
-    IUserContext userContext)
-    : ICommandHandler<ArchiveTodoCommand>
+public sealed class ArchiveTodoCommandHandler(IAppDbContext context)
+    : IRequestHandler<ArchiveTodoCommand, ErrorOr<Unit>>
 {
-    public async Task<Result> Handle(ArchiveTodoCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<Unit>> Handle(ArchiveTodoCommand request, CancellationToken cancellationToken)
     {
         TodoItem? todoItem = await context.TodoItems
-            .SingleOrDefaultAsync(
-                t => t.Id == command.TodoItemId && t.UserId == userContext.UserId,
-                cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == request.TodoItemId && t.UserId == request.UserId, cancellationToken);
 
         if (todoItem is null)
-        {
-            return Result.Failure(TodoItemErrors.NotFound(command.TodoItemId));
-        }
+            return TodoErrors.NotFound;
 
         if (todoItem.IsArchived)
-        {
-            return Result.Failure(TodoItemErrors.AlreadyArchived(command.TodoItemId));
-        }
+            return TodoErrors.AlreadyArchived;
 
         todoItem.IsArchived = true;
-        todoItem.ArchivedAt = dateTimeProvider.UtcNow;
-
-        todoItem.Raise(new TodoItemArchivedDomainEvent(todoItem.Id));
+        todoItem.ArchivedAt = DateTime.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
 
-        return Result.Success();
+        return Unit.Value;
     }
 }
 ```
 
 Notes:
-- Ownership: either filter by `userContext.UserId` in the query (preferred) or compare explicitly and return `Result.Failure(UserErrors.Unauthorized())`.
-- `IDateTimeProvider` (from `SharedKernel`) for timestamps — never `DateTime.UtcNow` directly.
-- If the command invalidates cached query data, inject `HybridCache` and call `cache.RemoveAsync({Feature}CacheKeys.X(...), cancellationToken)` after saving.
-- For a returning command (`ICommand<Guid>`), return the value directly — `Result<T>` has an implicit conversion: `return todoItem.Id;`.
+- Ownership: filter the query by the `UserId` carried on the request (preferred), or load first and compare, returning `UserErrors.Unauthorized` on mismatch.
+- For a returning command (`IRequest<ErrorOr<Guid>>`), return the value directly — `ErrorOr<T>` has an implicit conversion: `return todoItem.Id;`.
+- `Unit.Value` (from MediatR) is the "no data" success value for void commands — don't invent a custom marker type.
+- Cross-cutting concerns (logging, validation, file cleanup) are already wired as open-generic MediatR pipeline behaviors in `Application/Behaviors/` — a new slice doesn't add its own.
 
 ## Domain additions (if needed)
 
-Error factory on the existing `{Entity}Errors` class in `src/Domain/{Feature}/`:
+`{Entity}Errors` class in `Domain/Errors/{Entity}Errors.cs`, built from **ErrorOr**'s `Error` factories with a nested `Codes` class of string constants:
 
 ```csharp
-public static Error AlreadyArchived(Guid todoItemId) => Error.Problem(
-    "TodoItems.AlreadyArchived",
-    $"The todo item with Id = '{todoItemId}' is already archived.");
-```
+using ErrorOr;
 
-Error type → HTTP status (via `CustomResults.Problem`): `NotFound` → 404, `Conflict` → 409, `Problem`/`Validation` → 400, `Failure` → 500.
+namespace Domain.Errors;
 
-Domain event, one file each in `src/Domain/{Feature}/`:
-
-```csharp
-using SharedKernel;
-
-namespace Domain.Todos;
-
-public sealed record TodoItemArchivedDomainEvent(Guid TodoItemId) : IDomainEvent;
-```
-
-Optional event handler (Application layer, in the use-case folder):
-
-```csharp
-using Domain.Todos;
-using SharedKernel;
-
-namespace Application.Todos.Archive;
-
-internal sealed class TodoItemArchivedDomainEventHandler : IDomainEventHandler<TodoItemArchivedDomainEvent>
+public static class TodoErrors
 {
-    public Task Handle(TodoItemArchivedDomainEvent domainEvent, CancellationToken cancellationToken)
+    public static Error NotFound => Error.NotFound(Codes.NotFound, "The todo item was not found.");
+    public static Error AlreadyArchived => Error.Conflict(Codes.AlreadyArchived, "The todo item is already archived.");
+
+    public static class Codes
     {
-        // Side effects here (notifications, projections, ...)
-        return Task.CompletedTask;
+        public const string NotFound = "Todos.NotFound";
+        public const string AlreadyArchived = "Todos.AlreadyArchived";
+        public const string UserIdRequired = "Todos.UserId.Required";
+        public const string DescriptionRequired = "Todos.Description.Required";
+        public const string DueDateInPast = "Todos.DueDate.InPast";
     }
 }
 ```
+
+`Error` factory → HTTP status (via the `MatchResult` extension in `references/endpoint.md`): `NotFound` → 404, `Conflict` → 409, `Validation`/`Failure` → 400, `Unauthorized` → 401, `Forbidden` → 403.
+
+This template has no domain-event/`Raise(...)` mechanism — state changes happen directly in the handler followed by `SaveChangesAsync`. If a change needs a side effect (notification, projection, etc.), call the relevant service directly from the handler rather than introducing an event pipeline that doesn't otherwise exist here.

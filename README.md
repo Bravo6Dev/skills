@@ -62,7 +62,7 @@ npx skills add Bravo6Dev/skills --global
 | ------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [`git-conventions`](#git-conventions)       | Keep `main` deployable and history readable via consistent branches, commits, PRs. |
 | [`react-architecture`](#react-architecture) | Stop React code from collapsing into monolithic files as features grow.            |
-| [`add-feature`](#add-feature)               | Scaffold a full Clean Architecture feature slice in one shot, end to end.          |
+| [`add-feature`](#add-feature)               | Scaffold a full MediatR + ErrorOr Clean Architecture feature slice in one shot.    |
 
 ---
 
@@ -110,22 +110,25 @@ User: "build a user profile page with stats and recent activity"
 
 ### `add-feature`
 
-**Description:** Scaffolds a complete Clean Architecture feature slice — command or query, handler, FluentValidation validator, minimal API endpoint, and tests — for this repo's `.NET` Clean Architecture template (no MediatR; custom `ICommand`/`IQuery` abstractions).
+**Description:** Scaffolds a complete Clean Architecture feature slice — command or query, MediatR handler, FluentValidation validator, Carter minimal-API endpoint, and tests — for a **MediatR + ErrorOr** `.NET` Clean Architecture template (not the custom `ICommand`/`IQuery`/`Result` style some starters use).
 
-**The point:** Adding a use case touches five-plus files across three layers in a specific, repeatable pattern. This skill runs that whole workflow — classify command vs. query, scaffold the Application slice, wire the endpoint, write handler/validator/integration tests — so nothing gets skipped or placed in the wrong layer.
+**The point:** Adding a use case touches five-plus files across three layers in a specific, repeatable pattern. This skill runs that whole workflow — classify command vs. query, scaffold the Application slice, wire the endpoint, write handler/validator/integration tests — so nothing gets skipped or placed in the wrong layer, and nothing gets "fixed" to match a different template than the one actually in use.
 
 **Covers:**
 - Command vs. query classification and naming conventions (`ArchiveTodoCommand`, `GetOverdueTodosQuery`, etc.).
-- Non-negotiable conventions: one folder per use case, `internal sealed` handlers, no manual DI registration, `Result`/`Result<T>` instead of throwing, validation via `FluentValidation` decorators, authorization checks against `IUserContext`.
-- Reference templates for command slices, query slices, endpoints, and tests.
-- A verification step (`dotnet build` && `dotnet test`, including `ArchitectureTests`).
+- Non-negotiable conventions: one folder per use case, `public sealed` MediatR handlers (`IRequestHandler<TRequest, ErrorOr<TResponse>>`), no manual DI registration for handlers/validators (assembly-scanned), `ErrorOr<T>` instead of throwing, validation via a MediatR `ValidationBehavior` pipeline behavior, user identity resolved from claims in the endpoint rather than injected into the handler.
+- Explicit route wiring into Carter modules (the one piece of an endpoint that isn't auto-discovered) and the `ApiResponse<T>`/`MatchResult` error-to-HTTP-status mapping.
+- Reference templates for command slices, query slices, endpoints, and MSTest unit/validator/integration tests.
+- Optional, opt-in notes on `HybridCache` for hot reads and MediatR's commercial licensing above its free tier — flagged, not applied by default.
+- A verification step (`dotnet build` && `dotnet test`).
 
 **Example:**
 ```
 User: "add a feature to archive a todo item"
-→ Creates src/Application/Todos/Archive/ (command, handler, validator),
-  src/Web.Api/Endpoints/Todos/Archive.cs, and matching handler/validator/
-  integration tests — then runs dotnet build && dotnet test.
+→ Creates Application/Features/Todos/Archive/ (command, handler, validator),
+  WebApi/Endpoints/Todos/Archive.cs, wires the route into TodosModule.cs,
+  and adds matching handler/validator/integration tests — then runs
+  dotnet build && dotnet test.
 ```
 
 ---

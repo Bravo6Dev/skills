@@ -1,78 +1,73 @@
 # Query Slice Templates
 
-Files go in `src/Application/{Feature}/{UseCase}/`. Queries are reads: no validator, no domain events, no `SaveChangesAsync`.
+Files go in `Application/Features/{Feature}/{UseCase}/`. Queries are reads: no validator, no `SaveChangesAsync`.
 
 ## Query
 
 ```csharp
-using Application.Abstractions.Messaging;
+using ErrorOr;
+using MediatR;
 
-namespace Application.Todos.GetOverdue;
+namespace Application.Features.Todos.GetOverdue;
 
-public sealed record GetOverdueTodosQuery : IQuery<List<TodoResponse>>;
+public sealed record GetOverdueTodosQuery(Guid UserId) : IRequest<ErrorOr<List<TodoResponse>>>;
 ```
 
-With parameters: `public sealed record GetTodoByIdQuery(Guid TodoItemId) : IQuery<TodoResponse>;`
+With more parameters, keep it a positional record where it stays readable, or switch to `init`-property style (see `references/command-slice.md`) once it grows past two or three fields:
+
+```csharp
+public sealed record GetTodoByIdQuery(Guid UserId, Guid TodoItemId) : IRequest<ErrorOr<TodoResponse>>;
+```
 
 ## Response DTO
 
-Lives next to the query. Flat, serialization-friendly, never a domain entity.
+Lives next to the query by default. Flat, serialization-friendly, never a domain entity.
 
 ```csharp
-namespace Application.Todos.GetOverdue;
+namespace Application.Features.Todos.GetOverdue;
 
 public sealed class TodoResponse
 {
-    public Guid Id { get; set; }
-    public Guid UserId { get; set; }
-    public string Description { get; set; }
-    public DateTime? DueDate { get; set; }
-    public List<string> Labels { get; set; } = [];
-    public bool IsCompleted { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? CompletedAt { get; set; }
+    public Guid Id { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public DateTime? DueDate { get; init; }
+    public List<string> Labels { get; init; } = [];
+    public bool IsCompleted { get; init; }
+    public DateTime CreatedAt { get; init; }
 }
 ```
 
-Each use-case folder owns its own `TodoResponse` — do not share DTOs across slices even if they look identical today.
+Only move a DTO into `Features/{Feature}/Common/` once a *second* use case in the same feature needs the identical shape (see the real example: `Application/Features/Users/AcademicStudent/Common/`). Don't pre-share a DTO across features "just in case" — duplicate it until two slices actually need the same shape.
 
 ## Handler
 
-Scope to the current user, project with `.Select` straight into the DTO:
+Scope to the caller (`request.UserId`, filled in by the endpoint from claims — see SKILL.md), project with `.Select` straight into the DTO:
 
 ```csharp
-using Application.Abstractions.Authentication;
-using Application.Abstractions.Data;
-using Application.Abstractions.Messaging;
+using Application.Interface.Data;
+using ErrorOr;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel;
 
-namespace Application.Todos.GetOverdue;
+namespace Application.Features.Todos.GetOverdue;
 
-internal sealed class GetOverdueTodosQueryHandler(
-    IApplicationDbContext context,
-    IUserContext userContext,
-    IDateTimeProvider dateTimeProvider)
-    : IQueryHandler<GetOverdueTodosQuery, List<TodoResponse>>
+public sealed class GetOverdueTodosQueryHandler(IAppDbContext context)
+    : IRequestHandler<GetOverdueTodosQuery, ErrorOr<List<TodoResponse>>>
 {
-    public async Task<Result<List<TodoResponse>>> Handle(
-        GetOverdueTodosQuery query,
+    public async Task<ErrorOr<List<TodoResponse>>> Handle(
+        GetOverdueTodosQuery request,
         CancellationToken cancellationToken)
     {
         List<TodoResponse> todos = await context.TodoItems
-            .Where(todoItem => todoItem.UserId == userContext.UserId &&
-                               !todoItem.IsCompleted &&
-                               todoItem.DueDate < dateTimeProvider.UtcNow)
-            .Select(todoItem => new TodoResponse
+            .Where(t => t.UserId == request.UserId && !t.IsCompleted && t.DueDate < DateTime.UtcNow)
+            .Select(t => new TodoResponse
             {
-                Id = todoItem.Id,
-                UserId = todoItem.UserId,
-                Description = todoItem.Description,
-                DueDate = todoItem.DueDate,
-                Labels = todoItem.Labels,
-                IsCompleted = todoItem.IsCompleted,
-                CreatedAt = todoItem.CreatedAt,
-                CompletedAt = todoItem.CompletedAt
+                Id = t.Id,
+                Description = t.Description,
+                DueDate = t.DueDate,
+                Labels = t.Labels,
+                IsCompleted = t.IsCompleted,
+                CreatedAt = t.CreatedAt
             })
             .ToListAsync(cancellationToken);
 
@@ -81,14 +76,14 @@ internal sealed class GetOverdueTodosQueryHandler(
 }
 ```
 
-For single-item queries, return `Result.Failure<TodoResponse>(TodoItemErrors.NotFound(id))` when nothing matches.
+For single-item queries, return the matching `{Entity}Errors` member (e.g. `TodoErrors.NotFound`) when nothing matches, instead of returning `null`.
 
-## Caching (optional, hot reads only)
+## Caching (optional — not currently used anywhere in this codebase)
 
-Wrap the database query in `HybridCache.GetOrCreateAsync` with a key from the feature's cache-keys class (see `GetTodoByIdQueryHandler` for the live example):
+No query in this template caches today; treat this as something to reach for deliberately, not a default for every new query. Only add it once a specific read is known to be hot (e.g. hit on every page load, expensive joins/aggregation).
 
 ```csharp
-namespace Application.Todos;
+namespace Application.Features.Todos;
 
 internal static class TodoCacheKeys
 {
@@ -98,10 +93,10 @@ internal static class TodoCacheKeys
 
 ```csharp
 TodoResponse? todo = await cache.GetOrCreateAsync(
-    TodoCacheKeys.ById(userId, query.TodoItemId),
+    TodoCacheKeys.ById(request.UserId, request.TodoItemId),
     async cancellation => await context.TodoItems
-        .Where(...)
-        .Select(...)
+        .Where(t => t.Id == request.TodoItemId && t.UserId == request.UserId)
+        .Select(t => new TodoResponse { /* ... */ })
         .SingleOrDefaultAsync(cancellation),
     cancellationToken: cancellationToken);
 ```
