@@ -61,7 +61,9 @@ npx skills add Bravo6Dev/skills --global
 | Skill                                       | Point                                                                              |
 | ------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [`git-conventions`](#git-conventions)       | Keep `main` deployable and history readable via consistent branches, commits, PRs. |
-| [`react-architecture`](#react-architecture) | Stop React code from collapsing into monolithic files as features grow.            |
+| [`react-architecture`](#react-architecture) | Define React feature structure for screens, responsive composition, contexts, and public entries. |
+| [`react-architecture-audit`](#react-architecture-audit) | Read-only audit of React feature structure and public-entry boundaries. |
+| [`react-structural-migration`](#react-structural-migration) | Safely move an existing React codebase to the target structure without behavior changes. |
 | [`add-feature`](#add-feature)               | Scaffold a full MediatR + ErrorOr Clean Architecture feature slice in one shot.    |
 
 ---
@@ -87,23 +89,64 @@ User: "write a commit message for this auth timeout fix"
 
 ### `react-architecture`
 
-**Description:** Applies whenever writing, generating, scaffolding, or refactoring React/Next.js code (components, pages, hooks, features, or full apps) in TypeScript or JavaScript.
+**Description:** Defines React feature structure while designing, creating, or modifying React code. It makes generation-time decisions about feature folders, screens, responsive composition, contexts, and public entry points.
 
-**The point:** Enforce production-grade architecture instead of letting files collapse into 500-line components that mix fetching, state, formatting, and JSX together — while scaling the amount of structure to the size of the task (a one-line fix doesn't need a folder restructure).
+**The point:** Keep feature structure explicit and predictable without turning normal implementation work into a migration or generic code-quality review.
 
 **Covers:**
-- One component per file; feature-based folder structure (`features/user-profile/{components,hooks,services,types,utils}`) over a root-level technical split.
-- Barrel exports (`index.ts`) as the public API boundary between features.
-- Business logic pulled into hooks, API calls isolated in `services/`, pure helpers in `utils/`.
-- Judgment calls on prop drilling (Context vs. Zustand vs. Redux Toolkit), memoization, and lazy-loading — applied only where they solve a real problem.
-- A pre-submit checklist to self-review generated code before presenting it.
+- Feature roots, `screens/`, optional feature-owned `context/`, and barrel/public-entry organization.
+- A thin responsive screen dispatcher (`XScreen`) between desktop and mobile sibling screens.
+- The decision between whole-screen responsive splits and isolated component swaps.
+- The difference between a feature public API boundary and a route-level lazy-loading boundary.
+- Lint verification after changing barrels or their file extensions.
 
 **Example:**
 ```
-User: "build a user profile page with stats and recent activity"
-→ Splits into ProfileHeader / ProfileStats / ProfileActivity components,
-  a useUserProfile hook for data fetching, a feature folder with a
-  barrel export, instead of one large ProfilePage.tsx file.
+User: "add a responsive calendar screen"
+→ Chooses a thin CalendarScreen dispatcher with DesktopCalendarScreen and
+  MobileCalendarScreen only when the page composition genuinely differs.
+```
+
+---
+
+### `react-architecture-audit`
+
+**Description:** Read-only audit of an existing React codebase against the `react-architecture` structure model.
+
+**The point:** Identify structural inconsistencies without conflating them with lint, accessibility, performance, React Doctor, or clean-code review.
+
+**Covers:**
+- Loose feature-root implementation files and screens outside `screens/`.
+- Misplaced feature components, hooks, contexts/providers, types, and utilities.
+- Public barrels, cross-feature deep imports, and deliberate route-level lazy-import exceptions.
+- Inconsistent responsive-screen and feature-provider organization.
+
+**Example:**
+```
+User: "audit our React feature folders"
+→ Reports grouped, file-specific structural violations and expected paths;
+  makes no repository changes.
+```
+
+---
+
+### `react-structural-migration`
+
+**Description:** Safely restructures an existing working React codebase while preserving behavior.
+
+**The point:** Move files, create structure, and update imports without slipping unrelated refactors or semantic changes into a structural migration.
+
+**Covers:**
+- Migration inventory, shared/high-contention planning, and target layout.
+- Parallel-agent partitioning with frozen routes, registries, shared barrels, and configuration.
+- Central reconciliation after independent feature moves.
+- Typecheck, full lint, relevant tests, old-path searches, export-surface checks, and final semantic-diff inspection.
+
+**Example:**
+```
+User: "move all loose feature screens into screens/"
+→ Inventories routes and public entries first, migrates disjoint features,
+  reconciles shared routes once, and verifies old paths are gone.
 ```
 
 ---
@@ -140,6 +183,12 @@ skills/
 ├── git-conventions/
 │   ├── SKILL.md
 │   └── references/
+├── react-architecture/
+│   └── SKILL.md
+├── react-architecture-audit/
+│   └── SKILL.md
+└── react-structural-migration/
+    └── SKILL.md
 ```
 
 Each skill contains:
@@ -177,7 +226,7 @@ When adding a new skill:
 This repository currently contains:
 
 * Git workflow and commit conventions (`git-conventions`).
-* React/Next.js project architecture conventions (`react-architecture`).
+* React feature architecture, structural audits, and safe migrations (`react-architecture`, `react-architecture-audit`, and `react-structural-migration`).
 * Clean Architecture feature scaffolding for .NET (`add-feature`).
 
 More skills will be added over time, including code review, backend development, and other engineering workflows.
