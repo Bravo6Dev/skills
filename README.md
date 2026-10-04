@@ -64,7 +64,9 @@ npx skills add Bravo6Dev/skills --global
 | [`react-architecture`](#react-architecture) | Define React feature structure for screens, responsive composition, contexts, and public entries. |
 | [`react-architecture-audit`](#react-architecture-audit) | Read-only audit of React feature structure and public-entry boundaries. |
 | [`react-structural-migration`](#react-structural-migration) | Safely move an existing React codebase to the target structure without behavior changes. |
-| [`add-feature`](#add-feature)               | Scaffold a full MediatR + ErrorOr Clean Architecture feature slice in one shot.    |
+| [`add-feature`](#add-feature)               | Scaffold a feature in the older Carter/MediatR template. |
+| [`vertical-slice-architecture`](#vertical-slice-architecture) | Set up a complete .NET vertical-slice architecture and reference template. |
+| [`vertical-slice-feature`](#vertical-slice-feature) | Add or audit a use case in an existing co-located vertical-slice project. |
 
 ---
 
@@ -176,6 +178,50 @@ User: "add a feature to archive a todo item"
 
 ---
 
+### `vertical-slice-architecture`
+
+**Description:** Establishes a .NET vertical-slice API architecture, infrastructure, persistence, tests, and setup in a new or existing solution.
+
+**The point:** Provide a working template with one reference operation that proves route discovery, binding, dispatch, validation, result mapping, database access, and tests. The default pattern uses co-located FastEndpoints, MediatR, ErrorOr, EF Core, and Domain/Application/Infrastructure boundaries; user choices and existing project constraints take precedence.
+
+**Covers:** project graph and dependency injection, configuration and secrets, persistence and migrations, auth and API documentation, a working reference slice, test hosts, CI, and an acceptance guard.
+
+**Install:** `npx skills add Bravo6Dev/skills --skill vertical-slice-architecture`
+
+**Example:**
+```
+User: "set up a vertical-slice .NET API with PostgreSQL"
+→ Creates the layered solution, infrastructure and API setup, one executable
+  reference slice, database migration, tests, and build/test instructions.
+```
+
+---
+
+### `vertical-slice-feature`
+
+**Description:** Adds a complete HTTP use case to an existing co-located vertical-slice .NET project, or audits an existing feature against its local architecture.
+
+**The point:** Follow the project's established pattern rather than assuming a fixed repository name, paths, database, or test framework. Complete the applicable flow from HTTP contract through domain behavior, persistence and external effects to tested responses. The audit guard is read-only unless fixes are requested.
+
+Use `add-feature` for the older template where HTTP endpoints and Application command/query slices are separate.
+
+**Covers:** request/endpoint/handler and applicable validator, response and binder; authorization and ownership; errors and localization; schema and integrations when needed; behavior, database, and HTTP tests; a file-specific audit with pass/fail/unverified status.
+
+**Install:** `npx skills add Bravo6Dev/skills --skill vertical-slice-feature`
+
+**Examples:**
+```
+User: "add an archive-todo use case to this vertical-slice API"
+→ Inspects a neighboring feature, implements the complete use case in the
+  project's structure, updates affected contracts and tests, then verifies it.
+
+User: "audit the wallet transactions feature"
+→ Traces the route through binding, policy, handler, persistence and responses;
+  reports evidence and verification status without changing files.
+```
+
+---
+
 ## Repository Structure
 
 ```text
@@ -187,8 +233,17 @@ skills/
 │   └── SKILL.md
 ├── react-architecture-audit/
 │   └── SKILL.md
-└── react-structural-migration/
-    └── SKILL.md
+├── react-structural-migration/
+│   └── SKILL.md
+├── add-feature/
+│   ├── SKILL.md
+│   └── references/
+├── vertical-slice-architecture/
+│   ├── SKILL.md
+│   └── references/
+└── vertical-slice-feature/
+    ├── SKILL.md
+    └── references/
 ```
 
 Each skill contains:
@@ -228,5 +283,6 @@ This repository currently contains:
 * Git workflow and commit conventions (`git-conventions`).
 * React feature architecture, structural audits, and safe migrations (`react-architecture`, `react-architecture-audit`, and `react-structural-migration`).
 * Clean Architecture feature scaffolding for .NET (`add-feature`).
+* .NET vertical-slice architecture setup and feature work (`vertical-slice-architecture` and `vertical-slice-feature`).
 
 More skills will be added over time, including code review, backend development, and other engineering workflows.
