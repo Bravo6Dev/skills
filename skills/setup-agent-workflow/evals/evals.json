@@ -1,0 +1,153 @@
+{
+  "skill_name": "setup-agent-workflow",
+  "notes": "Machine state is simulated with the inventory's --home (fake skills and plugins) and --path (fake or no CLIs). Unless an eval says otherwise, the user approves drafts but no installs, and no gate command is run.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "empty-machine",
+      "prompt": "/setup-agent-workflow new — a small Python API, GitHub repo acme/api.",
+      "files": ["an empty folder; inventory with --home <empty> --path \"\""],
+      "expected_output": "Recommendations for the relevant dependencies and missing CLIs, then a complete workflow built on step procedures.",
+      "expectations": [
+        "Recommends Matt Pocock skills, guard skills and git-conventions with official links, and names Node.js 22.20+ as the prerequisite for installing them",
+        "Lists git as required and missing, with the platform's install line",
+        "Does not recommend .NET or React dependencies",
+        "Does not stop the setup: every step points at a step procedure in the workflow doc",
+        "Installs nothing"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "dotnet-claude-code",
+      "prompt": "/setup-agent-workflow (host: Claude Code) on an existing ASP.NET Core + EF Core repo with tests.",
+      "files": ["a .NET repo; --home with only git-conventions installed; --path with git, node 24, dotnet, gh, claude"],
+      "expected_output": "Recommends dotnet/skills plugins dotnet, dotnet-test, dotnet-aspnetcore and dotnet-data (not MAUI/Blazor/WinForms) and dotnet-claude-kit, with Claude Code install commands and restart notes.",
+      "expectations": [
+        "Recommends only the Microsoft .NET plugins the markers make relevant",
+        "Gives `claude plugin marketplace add dotnet/skills` and `claude plugin install <plugin>@dotnet-agent-skills`, and says a restart is required",
+        "Gives the CWM.RoslynNavigator prerequisite for dotnet-claude-kit",
+        "Recommends no vertical-slice skill unless the code uses co-located slices"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "dotnet-codex-without-claude",
+      "prompt": "/setup-agent-workflow (host: Codex; the team uses only Codex) on a .NET repo.",
+      "files": ["a .NET repo; --home with skills only under .agents; --path with git, node, dotnet, codex 0.165.0; no claude"],
+      "expected_output": "Codex-specific install commands; dotnet-claude-kit marked unsupported for Codex; no CLAUDE.md created.",
+      "expectations": [
+        "Marks dotnet-claude-kit unsupported for Codex and doesn't offer to install it",
+        "Gives the Codex route for dotnet/skills (`codex plugin marketplace add dotnet/skills`, then /plugins)",
+        "Does not create CLAUDE.md; the step table goes in AGENTS.md",
+        "Names no Claude Code built-in or plugin skill in AGENTS.md as a step skill"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "react-only",
+      "prompt": "/setup-agent-workflow on a React + Vite repo.",
+      "files": ["a React repo with lint/test/build scripts and package-lock.json"],
+      "expected_output": "React Doctor and the React architecture skills recommended; no .NET content; npm gates from package.json.",
+      "expectations": [
+        "Distinguishes the React Doctor scan (`npx react-doctor@latest`) from its agent integration (`npx react-doctor@latest install`)",
+        "Never proposes `npx react-doctor@latest ci install`",
+        "Uses only scripts present in package.json",
+        "No .NET rule, command or dependency appears"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "decline-all",
+      "prompt": "Same as eval 4; the user answers 'continue with the fallbacks for all' and approves recording the decision.",
+      "files": ["the eval 4 repo"],
+      "expected_output": "A workflow built on step procedures, and docs/agents/workflow-config.json recording each declined dependency.",
+      "expectations": [
+        "Installs nothing",
+        "workflow-config.json lists each declined dependency with its fallback and date, and no absolute paths or versions",
+        "The React diagnostics step points at F9 and says React Doctor diagnostics are not run",
+        "Fallback checks are not described as equivalent to the tools they replace"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "approve-selected",
+      "prompt": "Same as eval 2; the user approves only guard-skills (clean-code-guard, test-guard) and dotnet-test.",
+      "files": ["the eval 2 repo"],
+      "expected_output": "Exactly the approved items are installed, one command at a time, then verified with a second inventory run.",
+      "expectations": [
+        "Runs or shows only the approved commands, with `-a claude-code -y` for the skills CLI",
+        "Re-runs the inventory and counts an item as installed only when it appears for the host",
+        "Marks the plugin as available after restart",
+        "Uses fallbacks for every declined item"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "no-implementer-cli-native-subagents",
+      "prompt": "/setup-agent-workflow (host: Claude Code) where codex-delegate is installed but no codex CLI exists.",
+      "files": ["any repo; --home with codex-delegate; --path without codex"],
+      "expected_output": "Delegation mode B (native subagents); the delegate skill is reported as unusable here.",
+      "expectations": [
+        "Chooses native subagents, not an external implementer",
+        "Does not recommend installing the Codex CLI unless the user asks for Codex delegation"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "no-cli-no-subagents",
+      "prompt": "/setup-agent-workflow on a host without a subagent tool and with no agent CLIs.",
+      "files": ["any repo; --path with git only"],
+      "expected_output": "Delegation mode C (direct); the CLAUDE.md delegation section is a single line or absent.",
+      "expectations": [
+        "Chooses direct implementation",
+        "Claims no subagent capability the host lacks"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "missing-github-cli",
+      "prompt": "/setup-agent-workflow on a GitHub-hosted repo without gh.",
+      "files": ["a repo with a github.com remote; --path without gh"],
+      "expected_output": "gh recommended with platform install guidance; tracker instructions fall back to F11.",
+      "expectations": [
+        "Lists gh as recommended and missing, with the platform's install line and a note that `gh auth login` is the user's step",
+        "The tracker instructions use F11: an authorized integration or manual web steps",
+        "Never claims an issue or PR was created"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "rerun-after-decline",
+      "prompt": "/setup-agent-workflow refresh on the eval 5 result.",
+      "files": ["the eval 5 output, including docs/agents/workflow-config.json"],
+      "expected_output": "No re-prompt for the declined dependencies; each is mentioned once as previously declined.",
+      "expectations": [
+        "Does not ask again about any dependency recorded as declined",
+        "Classifies the declined dependencies' fallbacks as compliant"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "compliant-rerun",
+      "prompt": "/setup-agent-workflow refresh on a project just set up with this skill, environment unchanged.",
+      "files": ["the eval 5 output"],
+      "expected_output": "No drift and no changes.",
+      "expectations": [
+        "Reports no drift",
+        "Writes nothing and installs nothing"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "install-failure",
+      "prompt": "Same as eval 1; the user approves installing Matt Pocock skills.",
+      "files": ["the eval 1 machine: no node or npx on PATH"],
+      "expected_output": "The install fails safely; the workflow uses the fallback and the report shows the failure.",
+      "expectations": [
+        "Reports the failure (no Node.js / npx) instead of retrying blindly",
+        "Switches to the step procedures and finishes the setup",
+        "Records the failure in the report, not as installed"
+      ]
+    }
+  ]
+}
