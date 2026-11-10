@@ -67,6 +67,7 @@ npx skills add Bravo6Dev/skills --global
 | [`add-feature`](#add-feature)               | Scaffold a feature in the older Carter/MediatR template. |
 | [`vertical-slice-architecture`](#vertical-slice-architecture) | Set up a complete .NET vertical-slice architecture and reference template. |
 | [`vertical-slice-feature`](#vertical-slice-feature) | Add or audit a use case in an existing co-located vertical-slice project. |
+| [`setup-agent-workflow`](#setup-agent-workflow) | Generate `AGENTS.md`, `CLAUDE.md` and a workflow doc from the tools you actually have; recommend and install missing ones with approval. |
 
 ---
 
@@ -222,6 +223,98 @@ User: "audit the wallet transactions feature"
 
 ---
 
+### `setup-agent-workflow`
+
+**Description:** Generates, refreshes or audits a repository's `AGENTS.md`, `CLAUDE.md` and agent workflow doc, so every coding agent follows one workflow (clarify, spec, tickets, implement, verify, review, land). It detects the stack, the host agent, and the installed skills, plugins and CLIs. It recommends the relevant missing ones with official links, installs only what you approve, and falls back to written procedures for the rest. Works for new and existing projects.
+
+**The point:** Agent instructions written by hand drift. They name skills that aren't installed, commands that were never run, and tools one agent has but another doesn't. This skill builds the instructions from what is actually available, for each agent, and records what you chose not to install, so it doesn't ask again.
+
+**Covers:**
+- A read-only, offline inventory (`scripts/inventory.mjs`), covered by automated tests:
+  - git, stack and architecture markers, CI, existing instruction files (including committed ones deleted from the working tree);
+  - skills per agent, user-only skills and Claude Code plugins;
+  - CLI versions;
+  - delegation readiness;
+  - the status of every catalog dependency.
+- New projects: a short interview and, with approval, skeletons for the business reference, architecture doc and first ADR.
+- Existing projects: conventions, gates, branch model and commit style taken from the code and git history. Instruction files are updated in place, never overwritten.
+- Refresh (in-place updates for drift only) and audit (a read-only report).
+- Stack references for .NET and React, plus a generic one for other stacks.
+
+#### Recommended toolchain
+
+Everything here is optional. The skill recommends only what matches the detected stack, architecture and host agent.
+
+| Dependency | For | Agents |
+|---|---|---|
+| [mattpocock/skills](https://github.com/mattpocock/skills) | Clarify, spec, tickets, implement, TDD; then run `/setup-matt-pocock-skills` once per repo | Claude Code, Codex, Copilot CLI, Gemini CLI, any skills CLI agent |
+| [amElnagdy/guard-skills](https://github.com/amElnagdy/guard-skills) | Code, test and docs review guards | Any skills CLI agent |
+| [Bravo6Dev/skills](https://github.com/Bravo6Dev/skills) | Git conventions; React and vertical-slice skills only when the project uses that architecture | Any skills CLI agent |
+| [amElnagdy/delegate-skills](https://github.com/amElnagdy/delegate-skills) | Brief → Implement → Review → Rework → Land with an external implementer, only if you choose it | Any skills CLI agent; proven on Claude Code |
+| [dotnet/skills](https://github.com/dotnet/skills) | Microsoft's .NET plugins, only the relevant ones (tests, ASP.NET Core, EF Core, …) | Claude Code, Copilot CLI, Codex 0.121.0+ |
+| [codewithmukesh/dotnet-claude-kit](https://github.com/codewithmukesh/dotnet-claude-kit) | .NET skills, agents and a Roslyn MCP server | Claude Code only |
+| [millionco/react-doctor](https://github.com/millionco/react-doctor) | React diagnostics (`npx react-doctor@latest`) and an optional agent integration | Claude Code, Cursor, Codex, OpenCode |
+
+#### How installation works
+
+1. The inventory reports what is installed, and for which agent.
+2. For each relevant missing dependency, the skill shows its purpose, official repository, why it applies, its status, the exact install command for your agent, whether a restart is needed, and its fallback.
+3. You choose: install all, install some, or continue with the fallbacks.
+4. Approved items are installed one at a time. A failure stops only that item, which switches to its fallback.
+5. The inventory runs again. An item counts as installed only when your agent can see it. Plugins that need a restart are reported as such.
+6. With your approval, the decisions are saved to `docs/agents/workflow-config.json`, so a later refresh doesn't ask again about what you declined. It stores no paths, versions or credentials.
+
+#### Fallbacks
+
+Missing, declined, failed or unsupported dependencies are replaced by written step procedures that the agent follows with the tools it already has:
+
+- planning, spec, ticket and implementation steps;
+- a manual review checklist;
+- the project's own lint, type, test and build gates instead of React Doctor;
+- the .NET SDK commands instead of the .NET plugins;
+- manual GitHub steps without `gh`;
+- native subagents or direct work instead of external delegation.
+
+Fallbacks are never described as equivalent to the tool they replace, and a check that didn't run is reported as **not run**.
+
+#### Agents, stacks and CLIs
+
+- **Agents:** `AGENTS.md` is for every agent; `CLAUDE.md` is written only when the team uses Claude Code. The skill works best when run from Claude Code. Other agents that load skills (Codex, Copilot CLI, Gemini CLI, Cursor, OpenCode) follow the same steps; only the install commands differ.
+- **Stacks:** .NET and React have dedicated references. Other stacks (Flutter, Python, Go, Rust, JVM, Node) use the generic reference, which finds commands in the README, CI and task runners.
+- **CLIs:**
+  - Required: `git`; `dotnet` for .NET; `node`/`npm` when the gates use package scripts.
+  - Recommended: Node.js 22.20+ (for `npx skills`); `gh` or `glab` for GitHub or GitLab.
+  - Optional: coding-agent CLIs (`claude`, `codex`, `copilot`, `gemini`, `opencode`). They are used only when you ask for external delegation, and never installed by default.
+
+#### Security and approval guarantees
+
+- The inventory never writes, installs, signs in, uses the network or runs project scripts. Its only processes are read-only git queries and `--version` probes of tools on `PATH` outside the repository.
+- Nothing is installed, committed, pushed, or created on your tracker without an explicit yes for that action.
+- Being installed is not the same as being usable. Tools that need an account are reported as "auth not checked" until a real command succeeds.
+- Another agent's CLI is never used just because it is installed. Implementers and subagents never delegate further.
+- Generated files contain no machine paths, usernames, tokens or secrets.
+
+**Install:** `npx skills add Bravo6Dev/skills --skill setup-agent-workflow`. The skills CLI needs Node.js 22.20+; the inventory script itself runs on Node 18+.
+
+**Tests:** `node --test skills/setup-agent-workflow/scripts/inventory.test.mjs`
+
+**Examples:**
+```
+User: "/setup-agent-workflow"   (in an existing .NET repo, from Claude Code)
+→ Inventories the repo, recommends dotnet-test, dotnet-aspnetcore and dotnet-data
+  (because the project uses them) and the guard skills, asks which to install,
+  installs only those, then drafts AGENTS.md, CLAUDE.md and the workflow doc.
+
+User: "/setup-agent-workflow refresh"
+→ Reports drift (a skill that was uninstalled, a changed test command) and proposes
+  in-place fixes only. Dependencies declined earlier are not offered again.
+
+User: "/setup-agent-workflow audit"
+→ The same report, with nothing written or installed.
+```
+
+---
+
 ## Repository Structure
 
 ```text
@@ -241,15 +334,22 @@ skills/
 ├── vertical-slice-architecture/
 │   ├── SKILL.md
 │   └── references/
-└── vertical-slice-feature/
+├── vertical-slice-feature/
+│   ├── SKILL.md
+│   └── references/
+└── setup-agent-workflow/
     ├── SKILL.md
-    └── references/
+    ├── scripts/
+    ├── references/
+    └── evals/
 ```
 
 Each skill contains:
 
 * `SKILL.md` — Main instructions and behavior.
 * `references/` — Additional examples, documentation, and supporting material.
+* `scripts/` (optional) — Deterministic helpers the skill runs.
+* `evals/` (optional) — Test scenarios for the skill.
 
 ---
 
@@ -284,5 +384,6 @@ This repository currently contains:
 * React feature architecture, structural audits, and safe migrations (`react-architecture`, `react-architecture-audit`, and `react-structural-migration`).
 * Clean Architecture feature scaffolding for .NET (`add-feature`).
 * .NET vertical-slice architecture setup and feature work (`vertical-slice-architecture` and `vertical-slice-feature`).
+* Agent instruction and workflow setup for new and existing repositories (`setup-agent-workflow`).
 
 More skills will be added over time, including code review, backend development, and other engineering workflows.
