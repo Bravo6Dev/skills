@@ -1,6 +1,6 @@
 # Query Slice Templates
 
-Files go in `Application/Features/{Feature}/{UseCase}/`. Queries are reads: no validator, no `SaveChangesAsync`.
+Files go in `Application/Features/{Feature}/{UseCase}/`. Queries are reads: no `SaveChangesAsync`. A query whose only input is the caller's id needs no validator; one that takes client input — a date range, search text, page and page size, an id that isn't already constrained by the route — gets a `{Query}Validator` in the same folder, written like a command validator (see `references/command-slice.md`).
 
 ## Query
 
@@ -37,7 +37,7 @@ public sealed class TodoResponse
 }
 ```
 
-Only move a DTO into `Features/{Feature}/Common/` once a *second* use case in the same feature needs the identical shape (see the real example: `Application/Features/Users/AcademicStudent/Common/`). Don't pre-share a DTO across features "just in case" — duplicate it until two slices actually need the same shape.
+Only move a DTO into `Features/{Feature}/Common/` once a *second* use case in the same feature needs the identical shape (e.g. `Application/Features/Todos/Common/TodoResponse.cs` once `GetTodoByIdQuery` above returns the same `TodoResponse` as `GetOverdueTodosQuery`). Don't pre-share a DTO across features "just in case" — duplicate it until two slices actually need the same shape.
 
 ## Handler
 
@@ -60,6 +60,8 @@ public sealed class GetOverdueTodosQueryHandler(IAppDbContext context)
     {
         List<TodoResponse> todos = await context.TodoItems
             .Where(t => t.UserId == request.UserId && !t.IsCompleted && t.DueDate < DateTime.UtcNow)
+            .OrderBy(t => t.DueDate)
+            .ThenBy(t => t.Id)
             .Select(t => new TodoResponse
             {
                 Id = t.Id,
@@ -77,6 +79,10 @@ public sealed class GetOverdueTodosQueryHandler(IAppDbContext context)
 ```
 
 For single-item queries, return the matching `{Entity}Errors` member (e.g. `TodoErrors.NotFound`) when nothing matches, instead of returning `null`.
+
+List queries:
+- Always give the list a stable order (`OrderBy` plus a unique tiebreaker such as the id). Without one the database may return rows in any order, and paging skips or repeats rows.
+- Bound the result. The sample above is unpaged to stay short; don't copy that for a list that can grow. Check how the project's existing list queries page (page/page-size fields on the query, a shared paged-response type, a fixed cap) and follow that, with a validated maximum page size. If no list query pages yet, ask the user before inventing a paging contract.
 
 ## Caching (optional — not currently used anywhere in this codebase)
 
