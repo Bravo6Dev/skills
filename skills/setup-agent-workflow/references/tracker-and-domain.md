@@ -1,8 +1,8 @@
 # Tracker and domain files (fallback)
 
-Use these only when `setup-matt-pocock-skills` is **not** installed, or the user declined to run it. When it is installed and `docs/agents/` is missing, ask the user to run `/setup-matt-pocock-skills` first (only they can start it), then continue. Its files have the same names and roles, so both paths leave the repo in the same shape.
+Use these only when `setup-matt-pocock-skills` is **not** installed, or the user declined to run it. When it is installed and `docs/agents/issue-tracker.md` doesn't exist, ask the user to run `/setup-matt-pocock-skills` first (only they can start it), then continue. Its files have the same names and roles, so both paths leave the repo in the same shape.
 
-Never overwrite an existing `docs/agents/*.md`. Read it and link to it.
+Never overwrite an existing `docs/agents/issue-tracker.md`, `domain.md` or `triage-labels.md`. Read it and link to it. (`docs/agents/workflow.md` is the workflow doc; a refresh updates it in place under rule 6 in `SKILL.md`.)
 
 ## `docs/agents/issue-tracker.md`
 
@@ -15,7 +15,7 @@ Pick the variant from the git remote (`git.remotes[].host` in the inventory) and
 
 Issues and specs for this repo live as GitHub issues in `<owner>/<repo>`. Use the `gh` CLI.
 
-- **Create:** `gh issue create --title "..." --body "..."` (heredoc for multi-line bodies).
+- **Create:** `gh issue create --title "..." --body "..."` (for a multi-line body, write it to a file and pass `--body-file <file>`; that works in every shell, PowerShell included).
 - **Read:** `gh issue view <n> --json number,title,body,labels,comments`.
 - **List:** `gh issue list --state open --json number,title,labels`.
 - **Sub-issue:** `gh issue create --parent <parent> ...` (gh 2.94+); with an older `gh` or without sub-issues, start the child body with `Part of #<parent>`.
@@ -25,7 +25,7 @@ Issues and specs for this repo live as GitHub issues in `<owner>/<repo>`. Use th
 When a skill or procedure says "publish to the tracker", create a GitHub issue. "Fetch the ticket" means read it as above.
 ```
 
-These are tracker usage, not gates, so they need no verification mark. If the inventory shows `gh` missing from `PATH`, add a line: "Requires the GitHub CLI (`gh`), signed in with `gh auth login`. Without it, follow `<workflow doc>` §8.<n> (F11)." Do the same with `glab` for GitLab.
+These are tracker usage, not gates, so they need no verification mark. The file is shared by the team, so it states the requirement, not this machine's state: add the line "Requires the GitHub CLI (`gh`), signed in with `gh auth login`. Without it, follow `<workflow doc>` §8.<n>." The workflow doc carries the tracker-without-CLI procedure (F11) whenever the tracker is GitHub or GitLab, whether or not the CLI is installed on this machine, because a teammate's machine may lack it. (If the repo keeps its own workflow doc and the user declined adding that procedure to it, drop the second sentence instead of pointing at a missing section.) Whether `gh` is missing on this machine goes in the report, never in the file. Do the same with `glab` for GitLab.
 
 ### GitLab (`glab`)
 

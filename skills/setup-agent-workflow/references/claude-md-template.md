@@ -2,7 +2,7 @@
 
 `CLAUDE.md` imports `AGENTS.md` and adds only what is specific to Claude Code: which skill runs each step, and how delegation works. Shared rules never move here.
 
-**Budget:** about 50 lines.
+**Budget:** about 50 lines, plus the delegation section in modes A and B.
 
 ## Template
 
@@ -17,7 +17,7 @@ These instructions apply only to Claude Code. Shared repository policies remain 
 
 Use the installed skills as each step needs them, following each skill's own instructions. Check a skill is installed before naming it; never invent one. <If any user-only skill is listed:> Skills written as `/name` with *(user runs)* start only when the user types them; suggest them, don't invoke them.
 
-<With no skill installed, replace that paragraph with: "No skills are installed for this repository yet. Each step follows its procedure in `<workflow doc>` §8; when a skill is installed later, run the `setup-agent-workflow` skill again with `refresh`.">
+<With no skill installed, replace that paragraph with: "No skills are installed for this repository yet. Each step follows its procedure in `<workflow doc>` §8; when a skill is installed later, update this table (the `setup-agent-workflow` skill's `refresh` does that, for those who have the skill).">
 
 | Step | Skills |
 | --- | --- |
@@ -44,10 +44,11 @@ Never treat this workflow as permission to create issues, labels, commits, pushe
 - A step the user chose to skip: drop the row. Triage appears only under the condition in the catalog.
 - Review: point at the **PR review skills** block in `AGENTS.md` rather than repeating it. List skills here only when `AGENTS.md` has no such block.
 - Mark every user-only skill (inventory `userOnly: true`) with `/` and *(user runs)*. Agent-invocable skills appear by bare name.
+- The rows above show bare names, which is how skills installed through the skills CLI are listed. When the inventory lists a skill under a plugin (`mattpocock-skills:to-spec`, the result of the Claude Code plugin install), write that full name in the row: `/mattpocock-skills:to-spec` *(user runs)*, `mattpocock-skills:tdd`.
 - Mark "Repository setup (done)" only when `docs/agents/issue-tracker.md` exists.
 - A plugin installed in this run that needs a restart may be named. The report, not the file, says to restart.
 - Name only skills whose `agents` include `claude-code`. A skill installed only for another agent doesn't count here.
-- Plugin skills use their full `<plugin>:<skill>` name, a few representative ones followed by "…". Name only those that match libraries the project uses or has chosen. Leave out `ef-core` while the data-access library is still Open.
+- Reference plugins (the `<Stack> reference` row) also use the full `<plugin>:<skill>` name, a few representative ones followed by "…". Name only those that match libraries the project uses or has chosen. Leave out `ef-core` while the data-access library is still Open.
 
 ## Existing `CLAUDE.md`
 

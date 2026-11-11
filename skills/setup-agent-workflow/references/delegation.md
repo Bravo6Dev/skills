@@ -1,6 +1,6 @@
 # Delegation
 
-Who writes the code, and how the orchestrating agent stays the reviewer. The delegation section goes in `CLAUDE.md` only. `AGENTS.md` carries just the guard that stops other agents from delegating again because they read it.
+Who writes the code, and how the orchestrating agent stays the reviewer. The delegation section goes in `CLAUDE.md` only. `AGENTS.md` carries just the guard that stops other agents from delegating again because they read it. When Claude Code isn't among the agents in use there is no `CLAUDE.md`, and when `CLAUDE.md` is a link to `AGENTS.md` kept as one shared file there is no separate one: the host's mode is stated in the workflow doc (§2 D), and for mode B on such a host the orchestration text below goes there too, with the host's name in place of "Claude".
 
 ## Pick the mode
 
@@ -8,13 +8,15 @@ Read `delegation` in the inventory and the host's own capabilities, then ask the
 
 | Mode | When | What `CLAUDE.md` says |
 |---|---|---|
-| **A. External implementer** | The user **explicitly asks** for a specific implementer (or `workflowConfig.config.delegation.implementer` names one), its `*-delegate` skill and CLI are available (`delegation.available`), and the user authorizes its use | Claude orchestrates; that implementer executes briefs. If its prerequisite check fails, Claude falls back to B (or C) and says so. Any other `*-delegate` skill needs approval. |
+| **A. External implementer** | The user **explicitly asks, in this session,** for a specific implementer, its `*-delegate` skill and CLI are available (`delegation.available`), and the user authorizes its use. `workflowConfig.config.delegation.implementer` only says which implementer to propose; a committed file never authorizes mode A by itself | Claude orchestrates; that implementer executes briefs. If its prerequisite check fails, Claude falls back to B (or C) and says so. Any other `*-delegate` skill needs approval. |
 | **B. Native subagents** | The host agent can spawn subagents with a tool it has right now (Claude Code can) | The agent orchestrates and uses its own subagents with the same brief. |
 | **C. Direct** | No subagents on this host, the user wants no delegation, or the project is too small for tickets | The agent implements directly. Omit the orchestration section; keep one line saying so. |
 
-**Priority:** A only when explicitly requested and authorized, otherwise B when the host supports native subagents, otherwise C. In a non-interactive run with no explicit request, take B or C.
+**Priority:** A only when explicitly requested and authorized, otherwise B when the host supports native subagents, otherwise C. When no user is there to answer (a headless or scheduled run), nothing can be approved: the run writes nothing, and reports B or C as the mode it would propose.
 
+- **A recorded mode A is proposed again, never assumed.** When the workflow config or an existing `CLAUDE.md` already holds mode A, say so and ask whether the user wants that implementer in this session; this question is not skipped as "already settled". If the user doesn't ask for it again, the existing mode-A text is still the user's content: leave it as it is, don't rewrite it to B or C and don't remove it, and say in the report that mode A was recorded earlier and not re-confirmed in this session.
 - **Never pick A because a CLI is installed.** Other agent CLIs usually bill a separate account. `delegation.available` only means a skill and a binary exist; it says nothing about sign-in, cost or the user's intent. Mention available implementers in the findings as information.
+- **State the permission mode before mode A is authorized.** Read the delegate skill's `SKILL.md` and tell the user how it launches the implementer CLI: whether the implementer can write files and run commands without asking (auto-approve or "yolo" flags), and whether it runs in a sandbox. An auto-approve or no-sandbox mode needs its own explicit yes, separate from choosing the implementer. Without it, use B or C.
 - **Native subagents:** the running agent states whether it has a subagent tool now. The inventory can't detect this. Don't claim subagents for a host you can't verify.
 - **No recursion:** an implementer or subagent never delegates further. The brief says so, and `AGENTS.md` carries the guard below.
 - With several authorized implementers, mention `delegate-setup` for lanes. If `delegation.laneConfig` shows lanes are configured, say "use the configured lanes" instead of naming one CLI.
@@ -32,9 +34,9 @@ The Claude orchestrator owns the spec and tickets, the implementation brief, ind
 
 For each approved spec slice or ticket:
 
-1. **Brief:** goal, current state, included and excluded files, acceptance criteria, the actual gate commands from <the gate location>, and a no-commit instruction. Excerpt the <`AGENTS.md` conventions | architecture doc and ADR rules> the ticket touches (<the two or three that matter most here>); the implementer may not read <that file>.
+1. **Brief:** goal, current state, included and excluded files, acceptance criteria, the actual gate commands from <the gate location>, and a no-commit instruction. Excerpt the <`AGENTS.md` conventions | architecture doc and ADR rules> the ticket touches (<the two or three that matter most here>); the implementer might not read <that file> on its own.
 2. **Implement:** if the `<x>-delegate` skill is installed and `<prerequisite check>` works, Claude may use `<x>-delegate`. Other `*-delegate` skills require approval. If unavailable, Claude may use its own subagents with the same brief and must disclose that fallback.
-3. **Review:** independently inspect the diff against the brief and spec, run the gates and the review skills in the Skills table; never rely on implementer claims.
+3. **Review:** independently inspect the diff against the brief and spec, run the gates and the review skills listed under **PR review skills** in `AGENTS.md`; never rely on implementer claims.
 4. **Rework:** send a narrow delta brief; resume the same implementer session when possible.
 5. **Land:** report outcomes and unexpected choices. Commit and push only with approval; don't widen scope without approval.
 
@@ -52,8 +54,10 @@ Verify every finding against the code. Don't post, approve, push or merge withou
 
 Adapting the template:
 
+- **`<the gate location>`:** `README.md` when it records the gates, otherwise the gate table in the workflow doc (rule 7 in `SKILL.md`).
+- **Review skills:** when `AGENTS.md` has no **PR review skills** block, name the review skills from the Skills table instead, or the review checklist in the workflow doc.
 - **Sandbox clause:** drop it when the tests need nothing outside the implementer's sandbox.
-- **Quiet gates:** these are quiet variants of the recorded gates, so they need no verification mark of their own. With no formatter, start the bullet at the build. For package scripts, use `<pm> run --silent <script>` (npm, pnpm and yarn accept `--silent`).
+- **Quiet gates:** these are quiet variants of the recorded gates, so they need no verification mark of their own. With no formatter, start the bullet at the build. For package scripts, use `<package manager> run --silent <script>` (npm and pnpm accept `--silent`; for yarn and bun, check the flag in the version the project uses and leave it out when unsure).
 - **Brief:** in a new project with no conventions in `AGENTS.md` yet, the brief excerpts the architecture doc and ADR-0001 instead.
 
 ## Guard text for `AGENTS.md` (every mode)

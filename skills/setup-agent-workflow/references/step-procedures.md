@@ -2,7 +2,7 @@
 
 Written procedures that replace a missing, declined, unsupported or failed dependency. They are steps an agent follows with the tools it already has, not skills, and they are never described as equivalent to the tool they replace when its coverage differs.
 
-When the user chooses one, put it in the workflow doc's **Step procedures** section as `§8.<n> <Step>`, adapted to the project's tracker and names. Then point the step's row (in `CLAUDE.md`, or in `AGENTS.md` **Skills by step** when there is no `CLAUDE.md`) and the phase text at that heading. Where a procedure mentions a glossary, decision register or ADRs the project doesn't have, drop that part instead of pointing at a missing file.
+When the user chooses one, put it in the workflow doc's **Step procedures** section as `§8.<n> <Step>`, adapted to the project's tracker and names. `<Step>` is the procedure's heading below without its `F<n>.` id (`§8.2 Clarify`, `§8.8 React diagnostics without React Doctor`). `F1`–`F11` are this skill's own ids for the procedures: generated files and the workflow config never use them; they refer to the `§8.<n>` heading. Then point the step's row (in `CLAUDE.md`, or in `AGENTS.md` **Skills by step** when there is no `CLAUDE.md`) and the phase text at that heading. Where a procedure mentions a glossary, decision register or ADRs the project doesn't have, drop that part instead of pointing at a missing file.
 
 **Never report an unexecuted check as passed.** Every gate and diagnostic is reported as **run and passed**, **run and failed** or **not run**, with the reason when it wasn't run.
 
@@ -55,7 +55,7 @@ For a destination too big or uncertain for one session (an unknown external prov
 
 ## F9. React diagnostics without React Doctor
 
-Run the gates the project has (`lint`, type-check, `test`, `build` from `package.json`; see [stacks/react.md](stacks/react.md)) and review changed components against the conventions in `AGENTS.md`. Report: "React Doctor diagnostics were not run." Lint and type-check don't cover React Doctor's own checks (its architecture, bundle-size and accessibility rules), so never describe the gates as a React Doctor pass.
+Run the gates the project has (`lint`, type-check, `test`, `build` from `package.json`; see [stacks/react.md](stacks/react.md)) and review changed components against the conventions in `AGENTS.md`. Report: "React Doctor diagnostics were not run." Lint and type-check don't cover React Doctor's own checks (for example its architecture and accessibility rules), so never describe the gates as a React Doctor pass.
 
 ## F10. .NET without the .NET plugins
 

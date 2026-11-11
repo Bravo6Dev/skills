@@ -19,7 +19,7 @@ Keep this order. Leave out a section whose source doesn't exist; never write a s
 2. `<workflow doc>`: engineering workflow, issues/branches/PRs, review procedure. Technical authority.
 3. `<architecture doc>`: <what it fixes: projects, folders, errors, persistence, tests>. Follow it in every change.
 4. `<ADR directory>`: recorded technical decisions (index in `<ADR directory>/README.md`).
-5. `README.md`: <"verified build and test commands" only when the README records the gates; otherwise what it does hold, or drop this item>.
+5. `README.md`: <"build and test commands" only when the README records the gates; otherwise what it does hold, or drop this item. Don't call the commands verified here: each one's verification state is recorded in `<workflow doc>`>.
 
 Don't restate or override those docs here; approved changes go into them.
 
@@ -27,7 +27,7 @@ Don't restate or override those docs here; approved changes go into them.
 
 - Follow the most recent agreed business rules. Don't implement an **Open** or **Deferred** requirement by assumption; ask.
 - <Stack rule: "The stack is fixed by <ADR/doc>: <one-line shape>. No <the tempting alternatives> without an approved ADR or spec." While the ADR is still proposed, write "proposed in <ADR>".>
-- <Data rule, when the project handles personal or private data: "Protect personal data and private documents by default: check <who> **and** ownership on every sensitive operation; never log secrets, tokens, <project-specific sensitive values>." For a client app that holds no data of its own, keep only the logging half.>
+- <Data rule, when the project handles personal or private data: "Protect personal data and private documents by default: check <who may act: the role or policy> **and** ownership on every sensitive operation; never log secrets, tokens, <project-specific sensitive values>." For a client app that holds no data of its own, keep only the logging half.>
 - **Current state:** <one or two sentences on what verifiably exists and what doesn't, on which branch. In a new project: "No application code exists yet.">
 - Get explicit approval before creating issues or labels, committing, pushing, opening PRs, adding a remote, or deploying.
 - <Optional, only if the user wants a review label: "After implementing and verifying an issue, add the existing `<label>` label to that issue so it is ready for review.">
@@ -35,7 +35,7 @@ Don't restate or override those docs here; approved changes go into them.
 
 ## <Language> conventions
 
-<One line naming what tooling already enforces and the auto-fix command, e.g. "`.editorconfig` enforces formatting and naming in the format check and the Release build; run `dotnet format <solution>` to fix all but naming". Then only the rules that need judgment, as bullets: **Name.** rule, with a tiny example when the rule is about shape. Source them from the code (see the stack reference); never import another project's rules. When the architecture doc already states a rule, point to it in one line instead of restating it. In a new project with no code, write one line instead: "Conventions are recorded in `<architecture doc>` as the first slices land; until then follow `<ADR-0001>`." Without an architecture doc or ADR: "Conventions are added to this section as the first features land.">
+<One line naming what tooling already enforces and the auto-fix command, e.g. "`.editorconfig` enforces formatting and naming in the format check and the Release build; run `dotnet format <solution>` to fix what has an automatic fix (not naming)". Then only the rules that need judgment, as bullets: **Name.** rule, with a tiny example when the rule is about shape. Source them from the code (see the stack reference); never import another project's rules. When the architecture doc already states a rule, point to it in one line instead of restating it. In a new project with no code, write one line instead: "Conventions are recorded in `<architecture doc>` as the first slices land; until then follow `<ADR-0001>`." Without an architecture doc or ADR: "Conventions are added to this section as the first features land.">
 
 ## Agent skills
 
@@ -45,7 +45,7 @@ Don't restate or override those docs here; approved changes go into them.
 
 ### Skills by step
 
-<Only when Claude Code isn't among the agents in use, so there is no `CLAUDE.md` to hold it: the step table from the `CLAUDE.md` template, naming only skills available to every agent in use, with "follow `<workflow doc>` §8.<n>" for the rest.>
+<Only when there is no separate `CLAUDE.md` to hold it (Claude Code isn't among the agents in use, or `CLAUDE.md` is a link to this file that the user kept as one shared file): the step table from the `CLAUDE.md` template, naming only skills available to every agent in use, with "follow `<workflow doc>` §8.<n>" for the rest. Plugin skills follow the rule under **Where a skill may be named** in the catalog.>
 
 ### <Stack> work
 
@@ -57,7 +57,7 @@ Don't restate or override those docs here; approved changes go into them.
 
 ### Reviewing a pull request
 
-Review the actual changes against the spec and architecture, covering correctness, security (authorization and ownership), maintainability, tests and meaningful duplication without overengineering. Verify findings against code and run the gates. See `<workflow doc>` §<review section>.
+Review the actual changes against the spec and architecture, covering correctness, security (<authorization and ownership, where the project has callers or data to protect>), maintainability, tests and meaningful duplication without overengineering. Verify findings against code and run the gates. See `<workflow doc>` §<review section>.
 
 ### PR review skills
 
@@ -69,7 +69,7 @@ When reviewing a PR, follow `<workflow doc>` §<review section> and run, when in
 
 ### Issue tracker
 
-<Tracker in one line, e.g. "GitHub Issues in `<owner>/<repo>` via `gh`">. See `docs/agents/issue-tracker.md`.
+<Tracker in one line, e.g. "GitHub Issues in `<owner>/<repo>` via `gh`">. <Only if `docs/agents/issue-tracker.md` exists or is written in this run; otherwise keep the one line above and drop this link:> See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

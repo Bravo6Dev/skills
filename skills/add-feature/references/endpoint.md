@@ -4,6 +4,8 @@ One file per use case in `{WebProject}/Endpoints/{Feature}/{UseCase}.cs`: a `sta
 
 ## Command with response body (POST → 200 + value)
 
+This template answers a create with `200` and the new id in the body, not `201 Created` with a `Location` header. Follow the existing endpoints; switch to 201 only if the user asks.
+
 ```csharp
 using Application.Features.Todos.Create;
 using Application.Interfaces.Services;
@@ -29,6 +31,8 @@ internal static class Create
 ```
 
 ## Void command from route parameter (PUT/DELETE → 204)
+
+`PUT` and `DELETE` are idempotent methods: a retried request must not change state a second time. The Archive sample meets that — a second archive changes nothing — but it answers the retry with `409`, so a client that retries after a lost response gets an error for an action that succeeded. Whether a retry should also return success is a design choice: return success when the state is already what was asked for, keep the `409`, or expose the action as `POST`. Follow what the project's existing endpoints do, and ask the user if there is no precedent.
 
 ```csharp
 using Application.Features.Todos.Archive;
@@ -115,15 +119,18 @@ public sealed class TodosModule : CarterModule
             .MapToApiVersion(new Asp.Versioning.ApiVersion(1, 0))
             .WithName("ArchiveTodo")
             .WithSummary("Archive a todo item")
-            .Produces<ApiResponse<Unit>>(StatusCodes.Status204NoContent)
+            .WithDescription("Archives a todo item that belongs to the current user.")
+            .Produces(StatusCodes.Status204NoContent)
             .Produces<ApiResponse<Unit>>(StatusCodes.Status401Unauthorized)
             .Produces<ApiResponse<Unit>>(StatusCodes.Status404NotFound)
+            .Produces<ApiResponse<Unit>>(StatusCodes.Status409Conflict)
             .Produces<ApiResponse<Unit>>(StatusCodes.Status500InternalServerError);
 
         group.MapGet("/overdue", GetOverdue.HandleAsync)
             .MapToApiVersion(new Asp.Versioning.ApiVersion(1, 0))
             .WithName("GetOverdueTodos")
             .WithSummary("List overdue todos")
+            .WithDescription("Lists the current user's incomplete todo items whose due date has passed.")
             .Produces<ApiResponse<List<TodoResponse>>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<List<TodoResponse>>>(StatusCodes.Status401Unauthorized)
             .Produces<ApiResponse<List<TodoResponse>>>(StatusCodes.Status500InternalServerError);
@@ -146,13 +153,16 @@ Every response body is wrapped in `ApiResponse<T>` (`{ bool Success, T? Data, st
 | `Conflict` | 409 |
 | anything else | 500 |
 
-The error message comes from `error.Description` if set, otherwise `IErrorMessageProvider.GetErrorMessage(error.Code)` (for localized messages — see `VoltyApi/Resources/Error.*.resx`-style resource files if this template has them).
+The error message comes from `error.Description` if set, otherwise `IErrorMessageProvider.GetErrorMessage(error.Code)` (for localized messages — see `{WebProject}/Resources/Error.*.resx`-style resource files if this template has them).
 
 ## Rules
 
-- Routes are lowercase, plural, no leading slash inside the group: `""`/`"/"`, `"/{id:guid}/archive"`. Route constraints (`:guid`, `:int`) on all typed parameters.
-- The `[FromBody]` request *is* the command/query when the shape matches 1:1; only add a separate `Request` class when the wire shape differs (e.g. enums arrive as `int` and need casting).
+- Routes are lowercase, plural, and relative to the group's prefix (the group already carries `api/v{version}/todos`): `"/"`, `"/{id:guid}/archive"`. Route constraints (`:guid`, `:int`) on all typed parameters.
+- The `[FromBody]` request *is* the command when the shape matches 1:1; only add a separate `Request` class when the wire shape differs (e.g. enums arrive as `int` and need casting). A `GET` has no body: build the query in the endpoint from route and query-string parameters (bound individually, or with `[AsParameters]` on a small request type) plus the caller's id.
+- Over-posting: every server-set property on a body-bound command (`UserId`, a tenant id, a role) can also be sent by the client. The endpoint must overwrite each one before dispatch (`command with { UserId = httpContext.User.GetUserId() }`), and nothing fails if a new endpoint forgets. Where the project allows it, make it impossible to forget: put `[JsonIgnore]` on the server-set property, or bind a separate `Request` type that doesn't have it.
 - Resolve `IMediator` and `IErrorMessageProvider` as `HandleAsync` parameters — both come from DI automatically for minimal API delegates.
 - Pull the caller's id with `httpContext.User.GetUserId()` (an extension on `ClaimsPrincipal`) rather than trusting a client-supplied `userId` field in the request body.
-- Always end the route registration with `.RequireAuthorization()` (or `.AllowAnonymous()` for pre-auth flows like registration/login) and give it `.WithName()`/`.WithSummary()`/`.WithDescription()` plus one `.Produces<ApiResponse<T>>(...)` per realistic status code — this is what feeds the OpenAPI docs.
+- Authorization is on by default at the group: `.RequireAuthorization()` sits on `MapGroup(...)` as in the module above, and every route in the group inherits it. When you create a new module, put it on the group. Add a per-route `.RequireAuthorization("PolicyName")` when a route needs more than "any authenticated user" (a role, a scope, an admin-only action), and `.AllowAnonymous()` only for pre-auth flows like registration/login.
+- Give every route `.WithName()`/`.WithSummary()`/`.WithDescription()` plus one `.Produces<ApiResponse<T>>(...)` per status code the route can really return — including each error type its handler returns (e.g. `409` for a `Conflict` error) — this is what feeds the OpenAPI docs. A `204` has no body, so declare it as `.Produces(StatusCodes.Status204NoContent)` with no response type.
+- The `Results<...>` return type is whatever `MatchResult` returns for that response shape — copy it from an existing endpoint of the same kind rather than editing the union by hand. Its members also describe themselves to OpenAPI, so the generated document can list a status a given route never returns (a `NoContent` on a create, a `Conflict` on a list); the `.Produces(...)` lines are the ones you maintain.
 - Failures never get hand-rolled responses — `MatchResult` is the only place HTTP status gets decided.
