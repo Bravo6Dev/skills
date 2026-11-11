@@ -57,7 +57,7 @@ Keep the section numbers for the decision register (§9) and glossary (§10) so 
 ## Tests
 ```
 
-Write only headings plus anything ADR-0001 already fixes. The first implementation tickets fill the rest.
+Write only headings plus anything ADR-0001 already fixes. The first implementation tickets fill the rest. These headings suit a back end; rename them to fit the stack (a front-end app: "Feature folder contract", "State and data", "Styling", "Tests"). When no stack is chosen yet, ADR-0001 isn't written: make the status line "Draft until the stack ADR is accepted".
 
 ## `docs/adr/README.md`
 
@@ -83,6 +83,8 @@ Write only headings plus anything ADR-0001 already fixes. The first implementati
     ## Decision
     ## Consequences
 ```
+
+When the user hasn't chosen a stack, ADR-0001 isn't written (below): leave the `0001` row out of the table, so the index links to no missing file.
 
 ## `docs/adr/0001-stack-and-architecture.md`
 

@@ -13,11 +13,13 @@ Look in this order and use the first source that has them:
 
 | Stack | Format | Lint/analyze | Test | Build |
 |---|---|---|---|---|
-| Flutter/Dart | `dart format --set-exit-if-changed .` | `flutter analyze` | `flutter test` | `flutter build <target>` |
+| Flutter/Dart | `dart format --output=none --set-exit-if-changed .` | `flutter analyze` | `flutter test` | `flutter build <target>` |
 | Python | `ruff format --check .` | `ruff check .` | `pytest` | — |
 | Go | `gofmt -l .` (must print nothing) | `go vet ./...` | `go test ./...` | `go build ./...` |
 | Rust | `cargo fmt --check` | `cargo clippy -- -D warnings` | `cargo test` | `cargo build` |
 | JVM | the build's format plugin | the build's lint plugin | `./mvnw test` / `./gradlew test` | `./mvnw package` / `./gradlew build` |
+
+The format column holds verify-only forms: a gate must not rewrite files. For a Node service without React (the inventory's `node` stack), take the gates from the `package.json` scripts the way [react.md](react.md) does, and never name a script that isn't there. `./mvnw package` and `./gradlew build` also run the tests.
 
 Never run a command to verify it without the user's approval. Builds can download packages and tests can need services.
 

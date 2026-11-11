@@ -1,6 +1,6 @@
 # Stack: .NET
 
-Detected by `*.sln`, `*.slnx`, `*.csproj` or `*.fsproj` in the inventory.
+Detected by `*.sln`, `*.slnx`, `*.csproj`, `*.fsproj` or `*.vbproj` in the inventory.
 
 ## Gate commands
 
@@ -13,28 +13,30 @@ dotnet build <solution> --configuration Release --no-restore
 dotnet test <test command for the runner in use>
 ```
 
+After the Release build gate, pass `--no-build --configuration Release` to `dotnet test`, so the tests run against that build instead of rebuilding in Debug.
+
 Check the test runner before writing the test command. When `global.json` opts `dotnet test` into Microsoft Testing Platform (`"test": { "runner": "Microsoft.Testing.Platform" }`, .NET 10 SDK+), the form is `dotnet test --solution <solution> ...`. Otherwise `dotnet test` runs in VSTest mode and the form is `dotnet test <solution> ...`, even when a project file sets `UseMicrosoftTestingPlatformRunner`. If the `dotnet-test:run-tests` skill is installed, use it to confirm.
 
 **New project:** no solution exists yet, so write the commands with `<solution>` as a placeholder, mark them **not run**, and note that the first implementation ticket fills in the name and confirms the test runner.
 
-**Quiet variants for delegated runs:** `dotnet format <solution> --no-restore` first (it fixes everything except naming), then `dotnet format <solution> --verify-no-changes --no-restore` and `dotnet build <solution> -c Release --no-restore -v q -clp:ErrorsOnly`. When the tests use Testcontainers, note that they need Docker, which a sandboxed implementer may not reach.
+**Quiet variants for delegated runs:** `dotnet format <solution> --no-restore` first (it applies the automatic fixes; naming, and diagnostics with no automatic fix, stay), then `dotnet format <solution> --verify-no-changes --no-restore` and `dotnet build <solution> -c Release --no-restore -v q -clp:ErrorsOnly`. When the tests use Testcontainers, note that they need Docker, which a sandboxed implementer may not reach.
 
 ## Skills
 
-- Slices: `vertical-slice-feature` for co-located slice folders, `add-feature` for MediatR + ErrorOr + Carter Clean Architecture, `vertical-slice-architecture` only to set up a new foundation. Name the one that matches the code. If none matches, describe the nearest-feature procedure (F5 in step-procedures.md) instead.
-- References, named in the instruction file of the agent that has them (`CLAUDE.md` for Claude Code plugins; `AGENTS.md` **Skills by step** for a team without Claude Code): `dotnet-claude-kit:*` (Claude Code only) and `dotnet-*:*` plugin skills (`ef-core`, `authentication`, `openapi`, `testing`, `serilog`, `security-scan`, `dotnet-test:run-tests`, `dotnet-data:optimizing-ef-core-queries`, …) "applied inside <ADR/architecture doc>". Where they suggest a different pattern, the project's ADRs and architecture doc win.
+- Slices: `vertical-slice-feature` for slice folders co-located in the API project (`Api/Features/<Area>/<UseCase>/`, typically FastEndpoints), `add-feature` for split-layer Clean Architecture (MediatR handlers in `Application/Features/<Feature>/<UseCase>/`, ErrorOr, Carter modules in the Web API project), `vertical-slice-architecture` only to set up a new foundation. Name the one that matches the code. If none matches, describe the nearest-feature procedure (F5 in step-procedures.md) instead.
+- References, named in the instruction file of the agent that has them (`CLAUDE.md` for Claude Code plugins; `AGENTS.md` **Skills by step** only for a team without Claude Code whose agents all have the plugin, confirmed by the user because the inventory can't see Codex or Copilot plugins): `dotnet-claude-kit:*` (Claude Code only) and `dotnet-*:*` plugin skills (`ef-core`, `authentication`, `openapi`, `testing`, `serilog`, `security-scan`, `dotnet-test:run-tests`, `dotnet-data:optimizing-ef-core-queries`, …) "applied inside <ADR/architecture doc>". Where they suggest a different pattern, the project's ADRs and architecture doc win.
 
 ## Candidate conventions
 
 Rules that need judgment, in the form a .NET project's `AGENTS.md` can use. **Include a rule only when the code already follows it or the user approves adding it.** Replace every path and name with the project's real ones. Leave out rules for libraries the project doesn't use.
 
-First, the enforced line: what `.editorconfig`, analyzers and `TreatWarningsAsErrors` already check, and that `dotnet format <solution>` fixes all but naming.
+First, the enforced line: what `.editorconfig`, analyzers and `TreatWarningsAsErrors` already check, and that `dotnet format <solution>` applies the automatic fixes (not naming).
 
 - **Aggregates.** A root per consistency boundary; invariants enforced through domain operations; children created and changed through the root; cross-aggregate uniqueness enforced in the database.
 - **Relationships.** Navigation properties; track a new graph through its root; let EF Core fix up foreign keys.
 - **Unit of work.** One `SaveChangesAsync()` per atomic change when possible; an explicit transaction only when a guarantee spans queries, locks or several saves.
 - **Indexes.** Which indexes are allowed without a spec (primary keys, uniqueness that enforces a rule) and when performance indexes are reviewed.
-- **Use-case names.** A slice folder and its files are named `<Verb><Noun>`, with the verb table (`List`, `Get`, `Create`, `Update`, `Delete`, `Upsert`, or the business verb from the glossary) and the file pattern (`Features/<Area>/<UseCase>/<UseCase>Endpoint.cs`, `…Request.cs`, `…Handler.cs`).
+- **Use-case names.** A slice folder and its files are named `<Verb><Noun>`, with the verb table (`List`, `Get`, `Create`, `Update`, `Delete`, `Upsert`, or the business verb from the glossary) and the file pattern (`Features/<Area>/<UseCase>/<UseCase>Endpoint.cs`, `…Request.cs`, `…Handler.cs`). That pattern is the co-located layout; a split-layer project in the `add-feature` style names `Application/Features/<Feature>/<UseCase>/` folders holding the command or query, its handler and validator. Write the pattern the code shows.
 - **Async suffix.** Every method returning `Task`/`ValueTask` ends in `Async`, except overrides, interface implementations that keep the framework's name, and test methods named as sentences.
 - **Unbraced statements.** When braces may be omitted, if ever.
 - **Vertical LINQ.** One significant call per line in multi-step query chains, with a short example.
