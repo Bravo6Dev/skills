@@ -5,27 +5,58 @@
 // network, never runs project scripts. The only processes it starts are read-only git queries and
 // `<tool> --version` probes of executables resolved from PATH outside the repository, run from a
 // neutral directory with a timeout.
+// Limit of that contract: git reads the repository's own configuration. The git queries here
+// turn off optional locks, the file-system monitor and signature display, but git can still run
+// a content filter that the repository configures. Inventory only a repository you trust.
 //
 // Usage: node inventory.mjs [--cwd <repo>] [--home <dir>] [--path <PATH string>] [--no-probe]
 //   --home and --path simulate another machine in tests; --no-probe skips the version probes.
+//   Flags also accept --key=value. An unknown flag, a missing value, or a --cwd that is not an
+//   existing directory prints an error to stderr and exits with code 2 without printing JSON.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
+const USAGE = "node inventory.mjs [--cwd <repo>] [--home <dir>] [--path <PATH string>] [--no-probe]";
+const KNOWN_FLAGS = { cwd: "value", home: "value", path: "value", "no-probe": "boolean", help: "boolean" };
+const SCHEMA_VERSION = 1;
+
 const args = parseArgs(process.argv.slice(2));
 
 if (args.help) {
-  console.log("node inventory.mjs [--cwd <repo>] [--home <dir>] [--path <PATH string>] [--no-probe]");
+  console.log(USAGE);
   process.exit(0);
 }
 
+const isWindows = process.platform === "win32";
+// Windows and macOS file systems are case-insensitive by default; Linux is not.
+const caseInsensitiveFs = isWindows || process.platform === "darwin";
+
+// An empty value is what an unset shell variable expands to; it must not fall back to the
+// directory the script happens to run in. (`--path ""` is valid: it means an empty PATH.)
+for (const flag of ["cwd", "home"]) {
+  if (args[flag] === "")
+    fail(`--${flag} needs a value`);
+}
+
 const cwd = path.resolve(args.cwd ?? process.cwd());
+
+// A mistyped path must not be reported as an empty new project.
+if (!isDir(cwd))
+  fail(`--cwd is not an existing directory: ${cwd}`);
+
 const home = path.resolve(args.home ?? os.homedir());
+// Claude Code keeps its user-level files in CLAUDE_CONFIG_DIR when that is set. An explicit --home
+// simulates another machine, so the variable of this machine is ignored then.
+const claudeDir = args.home === undefined && process.env.CLAUDE_CONFIG_DIR
+  ? path.resolve(process.env.CLAUDE_CONFIG_DIR)
+  : path.join(home, ".claude");
 const searchPath = typeof args.path === "string" ? args.path : process.env.PATH ?? "";
 const probe = !args["no-probe"];
-const isWindows = process.platform === "win32";
+// Things the inventory could not read. They are reported instead of being silently skipped.
+const warnings = [];
 
 const IGNORED_DIRS = new Set([
   ".git", "node_modules", "bin", "obj", "dist", "build", "out", ".next", ".nuxt", ".dart_tool",
@@ -35,7 +66,7 @@ const IGNORED_DIRS = new Set([
 const SOURCE_EXTENSIONS = new Set([
   ".cs", ".fs", ".vb", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".dart",
   ".py", ".go", ".java", ".kt", ".kts", ".rs", ".rb", ".php", ".swift", ".c", ".cc", ".cpp", ".h",
-  ".hpp", ".scala", ".ex", ".exs",
+  ".hpp", ".scala", ".ex", ".exs", ".sql", ".tf", ".sh", ".ps1", ".razor", ".cshtml", ".xaml",
 ]);
 const MANIFEST_NAMES = new Set([
   "package.json", "pubspec.yaml", "pyproject.toml", "requirements.txt", "go.mod", "Cargo.toml",
@@ -45,13 +76,25 @@ const MANIFEST_NAMES = new Set([
   "eslint.config.js", "eslint.config.mjs", ".eslintrc.json", ".eslintrc.js", ".prettierrc",
   "prettier.config.js", "ruff.toml", "analysis_options.yaml", "dotnet-tools.json",
 ]);
-const MANIFEST_EXTENSIONS = new Set([".sln", ".slnx", ".csproj", ".fsproj"]);
+const MANIFEST_EXTENSIONS = new Set([".sln", ".slnx", ".csproj", ".fsproj", ".vbproj"]);
 const MAX_ENTRIES = 20000;
 const MAX_DEPTH = 6;
+// Lock files in order of precedence, with the package manager each one belongs to.
+const LOCKFILES = [
+  ["pnpm-lock.yaml", "pnpm"],
+  ["yarn.lock", "yarn"],
+  ["bun.lockb", "bun"],
+  ["bun.lock", "bun"],
+  ["package-lock.json", "npm"],
+];
+// Options for every git call: never take optional locks (so `git status` does not rewrite the
+// index), never run a file-system monitor command configured in the repository, and never run
+// a signature program for `git log`. See the limit stated in the safety contract above.
+const GIT_SAFE_ARGS = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false"];
 
 // Where each agent reads skills, per the skills CLI agents table (vercel-labs/skills docs/agents.md).
 const SKILL_LOCATIONS = [
-  { scope: "user:.claude", dir: () => path.join(home, ".claude", "skills"), agents: ["claude-code"] },
+  { scope: "user:.claude", dir: () => path.join(claudeDir, "skills"), agents: ["claude-code"] },
   { scope: "user:.agents", dir: () => path.join(home, ".agents", "skills"), agents: ["codex"] },
   { scope: "user:.codex", dir: () => path.join(home, ".codex", "skills"), agents: ["codex"] },
   { scope: "user:.cursor", dir: () => path.join(home, ".cursor", "skills"), agents: ["cursor"] },
@@ -112,6 +155,7 @@ const workflowConfig = readWorkflowConfig();
 const tools = describeTools(stacks, gitReport);
 
 const report = {
+  schemaVersion: SCHEMA_VERSION,
   cwd,
   home,
   platform: process.platform,
@@ -132,27 +176,52 @@ const report = {
   tools,
   delegation: delegationSummary(skills),
   dependencies: describeDependencies(),
+  warnings,
 };
 
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+
+function fail(message) {
+  process.stderr.write(`inventory: ${message}\nUsage: ${USAGE}\n`);
+  process.exit(2);
+}
 
 function parseArgs(argv) {
   const out = {};
 
   for (let i = 0; i < argv.length; i++) {
-    const key = argv[i];
+    const token = argv[i];
 
-    if (!key.startsWith("--"))
+    if (!token.startsWith("--"))
+      fail(`unexpected argument: ${token}`);
+
+    const equals = token.indexOf("=");
+    const key = equals === -1 ? token.slice(2) : token.slice(2, equals);
+
+    if (!Object.prototype.hasOwnProperty.call(KNOWN_FLAGS, key))
+      fail(`unknown flag: --${key}`);
+
+    if (KNOWN_FLAGS[key] === "boolean") {
+      if (equals !== -1)
+        fail(`--${key} takes no value`);
+
+      out[key] = true;
       continue;
+    }
+
+    if (equals !== -1) {
+      out[key] = token.slice(equals + 1);
+      continue;
+    }
 
     const next = argv[i + 1];
 
-    if (next === undefined || next.startsWith("--")) {
-      out[key.slice(2)] = true;
-    } else {
-      out[key.slice(2)] = next;
-      i++;
-    }
+    // An empty string is a valid value (`--path ""`); another flag or nothing is not.
+    if (next === undefined || next.startsWith("--"))
+      fail(`--${key} needs a value`);
+
+    out[key] = next;
+    i++;
   }
 
   return out;
@@ -194,15 +263,41 @@ function readJson(p) {
     return null;
 
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
 }
 
+// Lists a directory, sorted. A directory that can't be read is reported, not fatal.
+function listDir(dir) {
+  try {
+    return fs.readdirSync(dir).sort();
+  } catch (error) {
+    warnings.push(`could not read ${dir}: ${error.code ?? error.message}`);
+    return [];
+  }
+}
+
+// The real location of a path: symlinks resolved, and case folded only where the file system
+// ignores case. A path that doesn't exist yet is compared as written.
+function canonical(p) {
+  let resolved;
+
+  try {
+    // .native also expands Windows 8.3 short names, which git reports in their long form.
+    resolved = fs.realpathSync.native(p);
+  } catch {
+    resolved = path.resolve(p);
+  }
+
+  return caseInsensitiveFs ? resolved.toLowerCase() : resolved;
+}
+
 function isInside(child, parent) {
-  const relative = path.relative(parent.toLowerCase(), child.toLowerCase());
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  const relative = path.relative(canonical(parent), canonical(child));
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 function which(command) {
@@ -234,7 +329,7 @@ function git(...gitArgs) {
     return null;
 
   try {
-    return execFileSync(gitPath, gitArgs, {
+    return execFileSync(gitPath, [...GIT_SAFE_ARGS, ...gitArgs], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -246,29 +341,82 @@ function git(...gitArgs) {
   }
 }
 
+// Asks git whether cwd is inside a work tree, and tells "not a repository" apart from a query
+// that failed (a timeout, or git refusing the directory as "dubious ownership"). A failed query
+// must not be reported as a folder without git.
+function gitRepoState() {
+  const result = spawnSync(gitPath, [...GIT_SAFE_ARGS, "rev-parse", "--is-inside-work-tree"], {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15000,
+    // git translates its messages; the "not a git repository" check below needs the English one.
+    env: { ...process.env, LC_ALL: "C", LANGUAGE: "C" },
+  });
+
+  if (result.error)
+    return { isRepo: false, error: result.error.code ?? result.error.message };
+
+  if (result.status === 0)
+    return { isRepo: (result.stdout ?? "").trim() === "true" };
+
+  const stderr = (result.stderr ?? "").trim();
+
+  // The whole output is checked: git may print a `warning:` line before the `fatal:` one.
+  if (/not a git repository/i.test(stderr))
+    return { isRepo: false };
+
+  const lines = stderr.split(/\r?\n/);
+  const message = lines.find((line) => /^fatal:/i.test(line)) ?? lines[0] ?? "";
+
+  return { isRepo: false, error: stripCredentials(message).slice(0, 200) || `git exited with code ${result.status}` };
+}
+
+// Removes credentials embedded in a remote URL (https://user:token@host/...), so a token never
+// reaches the report, the agent's context or a generated document. Everything up to the last `@`
+// before the path is dropped, because a password may itself contain `@`.
+function stripCredentials(text) {
+  return (text ?? "").replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/gi, "$1");
+}
+
 function gitInfo() {
   if (!gitPath)
     return { isRepo: false, gitMissing: true };
 
-  if (git("rev-parse", "--is-inside-work-tree") !== "true")
-    return { isRepo: false };
+  if (isInside(gitPath, cwd))
+    return { isRepo: false, gitError: "git resolves to a file inside the repository; not executed" };
+
+  const state = gitRepoState();
+
+  if (!state.isRepo)
+    return state.error ? { isRepo: false, gitError: state.error } : { isRepo: false };
 
   const remotes = (git("remote", "-v") ?? "")
     .split(/\r?\n/)
     .filter((line) => line.endsWith("(fetch)"))
     .map((line) => {
-      const [name, url] = line.split(/\s+/);
+      const [name, rawUrl] = line.split(/\s+/);
+      const url = stripCredentials(rawUrl);
       return { name, url, host: hostOf(url) };
     });
-  const branches = (git("for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes") ?? "")
+  const refs = (git("for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes") ?? "")
     .split(/\r?\n/)
-    .filter((ref) => ref && !/^refs\/remotes\/[^/]+\/HEAD$/.test(ref))
-    .map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ""));
-  const branchNames = new Set(branches.map((b) => b.replace(/^[^/]+\//, "")));
+    .filter((ref) => ref && !/^refs\/remotes\/[^/]+\/HEAD$/.test(ref));
+  const branches = refs.map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ""));
+  // Only a remote-tracking ref carries a remote name to drop: `origin/dev` is the branch `dev`,
+  // but the local branch `feature/dev` is not.
+  const branchNames = new Set(refs.map((ref) => (ref.startsWith("refs/remotes/")
+    ? ref.replace(/^refs\/remotes\/[^/]+\//, "")
+    : ref.replace(/^refs\/heads\//, ""))));
+  const root = git("rev-parse", "--show-toplevel");
+  const status = git("status", "--porcelain");
 
   return {
     isRepo: true,
-    root: git("rev-parse", "--show-toplevel"),
+    root,
+    // False when --cwd is a subdirectory of a larger repository: the files below are looked up
+    // under cwd, not under the repository root. null: the root could not be read.
+    cwdIsRoot: root === null ? null : canonical(root) === canonical(cwd),
     currentBranch: git("branch", "--show-current"),
     remotes,
     branches,
@@ -277,7 +425,8 @@ function gitInfo() {
     hasDev: branchNames.has("dev") || branchNames.has("develop"),
     commitCount: Number.parseInt(git("rev-list", "--count", "HEAD") ?? "0", 10) || 0,
     recentCommitSubjects: (git("log", "-15", "--format=%s") ?? "").split(/\r?\n/).filter(Boolean),
-    dirty: (git("status", "--porcelain") ?? "").length > 0,
+    // null: the status could not be read (for example a timeout). Unknown is not clean.
+    dirty: status === null ? null : status.length > 0,
   };
 }
 
@@ -305,9 +454,15 @@ function hostHints() {
 }
 
 function walk(root) {
-  const result = { sourceFiles: 0, sourceByExtension: {}, manifests: [], packageJsons: [], truncated: false };
+  const result = { sourceFiles: 0, sourceByExtension: {}, manifests: [], packageJsons: [], truncated: false, depthLimited: false };
   let seen = 0;
   const stack = [{ dir: root, depth: 0 }];
+  // The same order on every operating system, whatever order the file system lists entries in.
+  const finish = () => {
+    result.manifests.sort();
+    result.packageJsons.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return result;
+  };
 
   while (stack.length > 0) {
     const { dir, depth } = stack.pop();
@@ -315,21 +470,30 @@ function walk(root) {
 
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      warnings.push(`could not read ${dir}: ${error.code ?? error.message}`);
       continue;
     }
 
     for (const entry of entries) {
       if (++seen > MAX_ENTRIES) {
         result.truncated = true;
-        return result;
+        return finish();
       }
 
       const full = path.join(dir, entry.name);
 
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name) && depth < MAX_DEPTH)
+        if (IGNORED_DIRS.has(entry.name))
+          continue;
+
+        // A directory below the depth limit is skipped; say so, because a count of zero source
+        // files then proves nothing (Java and Kotlin sources often sit deeper than this).
+        if (depth < MAX_DEPTH)
           stack.push({ dir: full, depth: depth + 1 });
+        else
+          result.depthLimited = true;
+
         continue;
       }
 
@@ -348,30 +512,56 @@ function walk(root) {
     }
   }
 
-  return result;
+  return finish();
+}
+
+// The package manager whose lock file is nearest: in the package's own directory, or in a parent
+// up to the inventoried root (a workspace keeps one lock file at its root).
+function lockfilePackageManager(dir) {
+  let current = dir;
+
+  for (;;) {
+    const found = LOCKFILES.find(([lock]) => exists(path.join(current, lock)));
+
+    if (found)
+      return found[1];
+
+    const parent = path.dirname(current);
+
+    if (current === cwd || parent === current)
+      return null;
+
+    current = parent;
+  }
+}
+
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function describePackageJson(file) {
-  const pkg = readJson(file) ?? {};
+  // A package.json that isn't a JSON object (or can't be parsed) is described as an empty one.
+  const pkg = plainObject(readJson(file));
   const dir = path.dirname(file);
-  const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
-  const lockfiles = {
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-    "bun.lockb": "bun",
-    "bun.lock": "bun",
-    "package-lock.json": "npm",
+  // peerDependencies count: a component library lists react there, not under dependencies.
+  const deps = {
+    ...plainObject(pkg.dependencies),
+    ...plainObject(pkg.devDependencies),
+    ...plainObject(pkg.peerDependencies),
   };
-  const packageManager = Object.entries(lockfiles).find(([lock]) => exists(path.join(dir, lock)))?.[1]
-    ?? (typeof pkg.packageManager === "string" ? pkg.packageManager.split("@")[0] : null);
+  // The package's own lock file, then its packageManager field, then a lock file in a parent
+  // directory (a workspace package has none of its own).
+  const packageManager = LOCKFILES.find(([lock]) => exists(path.join(dir, lock)))?.[1]
+    ?? (typeof pkg.packageManager === "string" ? pkg.packageManager.split("@")[0] : null)
+    ?? (dir === cwd ? null : lockfilePackageManager(path.dirname(dir)));
   const frameworks = ["react", "next", "vite", "react-native", "expo", "vue", "svelte", "@angular/core", "express", "@nestjs/core", "vitest", "jest", "@playwright/test", "typescript"]
-    .filter((name) => name in deps);
+    .filter((name) => Object.prototype.hasOwnProperty.call(deps, name));
 
   return {
     path: rel(file),
-    name: pkg.name ?? null,
+    name: typeof pkg.name === "string" ? pkg.name : null,
     packageManager,
-    scripts: pkg.scripts ?? {},
+    scripts: plainObject(pkg.scripts),
     frameworks,
     workspaces: Boolean(pkg.workspaces),
   };
@@ -380,7 +570,7 @@ function describePackageJson(file) {
 function detectStacks(t) {
   const stacksFound = [];
   const has = (predicate) => t.manifests.filter(predicate);
-  const dotnet = has((m) => /\.(sln|slnx|csproj|fsproj)$/i.test(m));
+  const dotnet = has((m) => /\.(sln|slnx|csproj|fsproj|vbproj)$/i.test(m));
 
   if (dotnet.length > 0)
     stacksFound.push({ id: "dotnet", evidence: dotnet.slice(0, 8) });
@@ -420,7 +610,7 @@ function detectStacks(t) {
 }
 
 function describeDotnet(t) {
-  const files = t.manifests.filter((m) => /\.(csproj|fsproj)$|(^|\/)Directory\.(Build|Packages)\.props$/i.test(m));
+  const files = t.manifests.filter((m) => /\.(csproj|fsproj|vbproj)$|(^|\/)Directory\.(Build|Packages)\.props$/i.test(m));
 
   if (files.length === 0)
     return null;
@@ -428,10 +618,12 @@ function describeDotnet(t) {
   const text = files.map((m) => readText(path.join(cwd, m)) ?? "").join("\n");
   const globalJson = readJson(path.join(cwd, "global.json"));
   const markers = {
-    aspnetcore: /Sdk="Microsoft\.NET\.Sdk\.Web"|Microsoft\.AspNetCore\./.test(text),
+    aspnetcore: /Sdk=["']Microsoft\.NET\.Sdk\.Web["']|Microsoft\.AspNetCore\./.test(text),
     efCore: /Microsoft\.EntityFrameworkCore/.test(text),
-    tests: /Microsoft\.NET\.Test\.Sdk|xunit|MSTest|NUnit|TUnit/i.test(text),
-    blazor: /Sdk="Microsoft\.NET\.Sdk\.BlazorWebAssembly"|Microsoft\.AspNetCore\.Components/.test(text),
+    // Matched against the name of a referenced package (or the MSTest project SDK), not anywhere
+    // in the file: a bare /TUnit/i also matches a project named "Crm.Opportunities".
+    tests: /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|MSTest|NUnit|TUnit)[\w.]*["']|Sdk\s*=\s*["']MSTest\.Sdk/i.test(text),
+    blazor: /Sdk=["']Microsoft\.NET\.Sdk\.BlazorWebAssembly["']|Microsoft\.AspNetCore\.Components/.test(text),
     maui: /<UseMaui>\s*true/i.test(text),
     winforms: /<UseWindowsForms>\s*true/i.test(text),
     wpf: /<UseWPF>\s*true/i.test(text),
@@ -448,13 +640,19 @@ function describeDotnet(t) {
 function projectMode(t) {
   const commitCount = gitReport.commitCount ?? 0;
   const mode = t.sourceFiles === 0 ? "new" : "existing";
+  const walkCut = t.truncated || t.depthLimited;
 
   return {
     mode,
-    ambiguous: t.sourceFiles > 0 && t.sourceFiles < 10 && commitCount <= 3,
+    // Ambiguous: a little code in a young repository, or no recognised source file although the
+    // walk was cut short or the repository already has history (source in a language this script
+    // does not count, or deeper than it walks). "new" must then be confirmed, not assumed.
+    ambiguous: (t.sourceFiles > 0 && t.sourceFiles < 10 && commitCount <= 3)
+      || (t.sourceFiles === 0 && (walkCut || commitCount > 3)),
     sourceFiles: t.sourceFiles,
     sourceByExtension: t.sourceByExtension,
     walkTruncated: t.truncated,
+    depthLimited: t.depthLimited,
   };
 }
 
@@ -463,7 +661,7 @@ function findCi() {
   const workflows = path.join(cwd, ".github", "workflows");
 
   if (isDir(workflows)) {
-    for (const name of fs.readdirSync(workflows)) {
+    for (const name of listDir(workflows)) {
       if (/\.ya?ml$/i.test(name))
         found.push(`.github/workflows/${name}`);
     }
@@ -484,12 +682,33 @@ function describeMarkdown(file) {
     return { exists: false };
 
   const lines = text.split(/\r?\n/);
+  // Headings and imports are read from prose only: inside a fenced code block `# comment` is not
+  // a heading and `@decorator` is not an import.
+  const prose = [];
+  let fence = null;
+
+  for (const line of lines) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1];
+
+    if (fence) {
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length)
+        fence = null;
+      continue;
+    }
+
+    if (marker) {
+      fence = marker;
+      continue;
+    }
+
+    prose.push(line);
+  }
 
   return {
     exists: true,
     lines: lines.length,
-    headings: lines.filter((line) => /^#{1,3}\s/.test(line)).map((line) => line.trim()),
-    imports: lines.filter((line) => /^@\S+/.test(line.trim())).map((line) => line.trim()),
+    headings: prose.filter((line) => /^#{1,3}\s/.test(line)).map((line) => line.trim()),
+    imports: prose.filter((line) => /^@\S+/.test(line.trim())).map((line) => line.trim()),
   };
 }
 
@@ -526,7 +745,7 @@ function findAgentFiles() {
 
 function findDocs() {
   const listMarkdown = (dir) => (isDir(dir)
-    ? fs.readdirSync(dir).filter((name) => name.toLowerCase().endsWith(".md")).sort()
+    ? listDir(dir).filter((name) => name.toLowerCase().endsWith(".md"))
     : []);
   const adrDirs = ["docs/adr", "docs/adrs", "docs/decisions", "doc/adr", "adr"]
     .filter((dir) => isDir(path.join(cwd, dir)))
@@ -567,7 +786,7 @@ function readWorkflowConfig() {
 
 function frontmatter(file) {
   const text = readText(file) ?? "";
-  const match = text.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  const match = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/);
   const block = match?.[1] ?? "";
 
   return {
@@ -577,7 +796,9 @@ function frontmatter(file) {
 }
 
 function findSkills() {
-  const found = {};
+  // No prototype: a skill may be named `constructor`, `toString` or `__proto__`, and those names
+  // must be ordinary keys, not inherited members of Object.prototype.
+  const found = Object.create(null);
   const add = (name, userOnly, scope, agents) => {
     found[name] ??= { userOnly, locations: [], agents: [] };
     found[name].userOnly = found[name].userOnly || userOnly;
@@ -594,7 +815,7 @@ function findSkills() {
     if (!isDir(dir))
       return;
 
-    for (const entry of fs.readdirSync(dir)) {
+    for (const entry of listDir(dir)) {
       const skillFile = path.join(dir, entry, "SKILL.md");
 
       if (!exists(skillFile))
@@ -608,23 +829,45 @@ function findSkills() {
   for (const location of SKILL_LOCATIONS)
     scanDir(location.dir(), location.scope, location.agents);
 
-  for (const plugin of enabledClaudePluginEntries())
-    scanDir(path.join(plugin.installPath, "skills"), `plugin:${plugin.plugin}`, ["claude-code"], `${plugin.plugin}:`);
+  for (const plugin of enabledClaudePluginEntries()) {
+    // Without an install path there is nothing to scan; joining "" with "skills" would scan the
+    // `skills` folder of whatever directory the script was started in.
+    if (!plugin.installPath)
+      continue;
 
-  return Object.fromEntries(Object.entries(found).sort(([a], [b]) => a.localeCompare(b)));
+    scanDir(path.join(plugin.installPath, "skills"), `plugin:${plugin.plugin}`, ["claude-code"], `${plugin.plugin}:`);
+  }
+
+  const sorted = Object.create(null);
+
+  for (const name of Object.keys(found).sort((a, b) => a.localeCompare(b)))
+    sorted[name] = found[name];
+
+  return sorted;
 }
 
 function enabledClaudePluginEntries() {
-  const installed = readJson(path.join(home, ".claude", "plugins", "installed_plugins.json"));
-  const settings = readJson(path.join(home, ".claude", "settings.json")) ?? {};
-  const enabled = settings.enabledPlugins ?? {};
+  const installed = plainObject(readJson(path.join(claudeDir, "plugins", "installed_plugins.json")));
+  // Claude Code reads enabledPlugins from the user settings, then the project's shared settings,
+  // then the project's local settings; a later file wins for the keys it sets.
+  const enabled = Object.assign(
+    Object.create(null),
+    ...[
+      path.join(claudeDir, "settings.json"),
+      path.join(cwd, ".claude", "settings.json"),
+      path.join(cwd, ".claude", "settings.local.json"),
+    ].map((file) => plainObject(plainObject(readJson(file)).enabledPlugins)),
+  );
   const entries = [];
 
-  for (const [key, list] of Object.entries(installed?.plugins ?? {})) {
+  for (const [key, list] of Object.entries(plainObject(installed.plugins))) {
     const [plugin, marketplace] = key.split("@");
 
     for (const entry of Array.isArray(list) ? list : []) {
-      const forThisRepo = entry.projectPath && path.resolve(entry.projectPath).toLowerCase() === cwd.toLowerCase();
+      if (!entry || typeof entry !== "object")
+        continue;
+
+      const forThisRepo = typeof entry.projectPath === "string" && canonical(entry.projectPath) === canonical(cwd);
 
       if (entry.scope !== "user" && !forThisRepo)
         continue;
@@ -636,7 +879,7 @@ function enabledClaudePluginEntries() {
         scope: entry.scope ?? null,
         version: entry.version ?? null,
         enabled: enabled[key] !== false,
-        installPath: entry.installPath ?? "",
+        installPath: typeof entry.installPath === "string" ? entry.installPath : "",
       });
     }
   }
