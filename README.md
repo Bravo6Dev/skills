@@ -16,7 +16,7 @@ npx skills add Bravo6Dev/skills
 
 ---
 
-## Install a Specific Skill
+### Install a Specific Skill
 
 Install a single skill:
 
@@ -32,7 +32,7 @@ npx skills add Bravo6Dev/skills --skill git-conventions
 
 ---
 
-## Install for a Specific Agent
+### Install for a Specific Agent
 
 If multiple agents are supported, specify the target agent explicitly:
 
@@ -46,7 +46,9 @@ Example:
 npx skills add Bravo6Dev/skills --skill git-conventions --agent claude-code
 ```
 
-## Install Globally
+---
+
+### Install Globally
 
 Install skills globally for all projects:
 
@@ -73,14 +75,16 @@ npx skills add Bravo6Dev/skills --global
 
 ### `git-conventions`
 
-**Description:** Applies a team's Git branching, commit-message, and pull-request conventions whenever writing a commit message, naming/creating a branch, opening a PR, or giving git workflow advice.
+**Description:** Applies a team's Git branching, commit-message, and pull-request conventions — feature branches off an integration branch, Conventional Commits messages, and PR-only merges into protected branches — when writing a commit message, naming or creating a branch, opening or describing a pull request, or answering a git workflow question.
 
 **The point:** `main` should always be safe to deploy, and history should be easy for a reviewer (or future you) to read and undo. This skill encodes the branching model, commit format, and PR checklist so those rules get applied consistently instead of re-decided every time.
 
 **Covers:**
-- Branching model — feature branches off `dev`, `dev` as the tested integration branch, `main` always deployable and PR-only, rebase before merging.
-- Commit format — `<type>(<scope>): <subject>` with types `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
-- Pull requests — every merge goes through a PR with a "what and why" description, rebased onto the target first.
+- Repository check — reads the actual branches, recent commit subjects and documented rules first; the repository's own conventions win, and team choices it doesn't document (merge method, promotion to `main`, hotfix path) are asked, not assumed.
+- Branching model — feature branches off `dev`, `dev` as the tested integration branch, `main` always deployable and PR-only, rebase before merging (own branches only, `--force-with-lease`, never force-push `dev` or `main`).
+- Commit format — Conventional Commits 1.0.0, `<type>[optional scope][!]: <description>` with optional body and footers, breaking-change marking, and types `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Safety — no secrets or `.env` files in commits, deliberate staging, no `--no-verify`, `git revert` instead of rewriting shared history.
+- Pull requests — every merge goes through a PR titled in the commit format, with a "what and why" description, rebased onto the target first, and a pre-review checklist.
 
 **Example:**
 ```
@@ -92,16 +96,18 @@ User: "write a commit message for this auth timeout fix"
 
 ### `react-architecture`
 
-**Description:** Defines React feature structure while designing, creating, or modifying React code. It makes generation-time decisions about feature folders, screens, responsive composition, contexts, and public entry points.
+**Description:** Defines React feature structure when adding or materially expanding a feature folder, screen, feature-owned context, or feature barrel. It makes generation-time decisions about feature folders, screens, responsive composition, contexts, and public entry points.
 
 **The point:** Keep feature structure explicit and predictable without turning normal implementation work into a migration or generic code-quality review.
 
 **Covers:**
-- Feature roots, `screens/`, optional feature-owned `context/`, and barrel/public-entry organization.
+- Detecting the framework (client-side SPA or Next.js App Router), import aliases, naming, and existing boundary lint rules before choosing a structure.
+- Feature roots, `screens/`, optional feature-owned `context/` and `services/`, and barrel/public-entry organization.
 - A thin responsive screen dispatcher (`XScreen`) between desktop and mobile sibling screens.
 - The decision between whole-screen responsive splits and isolated component swaps.
 - The difference between a feature public API boundary and a route-level lazy-loading boundary.
 - Lint verification after changing barrels or their file extensions.
+- A worked feature example in `references/feature-example.md`.
 
 **Example:**
 ```
@@ -120,9 +126,11 @@ User: "add a responsive calendar screen"
 
 **Covers:**
 - Loose feature-root implementation files and screens outside `screens/`.
-- Misplaced feature components, hooks, contexts/providers, types, and utilities.
+- Misplaced feature components, hooks, contexts/providers, services, types, and utilities.
 - Public barrels, cross-feature deep imports, and deliberate route-level lazy-import exceptions.
 - Inconsistent responsive-screen and feature-provider organization.
+- A coverage summary and, per finding, `file:line`, severity, confidence, and the search that found it.
+- Always read-only: fixes are handed to `react-structural-migration`.
 
 **Example:**
 ```
@@ -140,10 +148,11 @@ User: "audit our React feature folders"
 **The point:** Move files, create structure, and update imports without slipping unrelated refactors or semantic changes into a structural migration.
 
 **Covers:**
-- Migration inventory, shared/high-contention planning, and target layout.
-- Parallel-agent partitioning with frozen routes, registries, shared barrels, and configuration.
+- Preflight: a clean working tree, a dedicated branch, and a recorded baseline of typecheck, lint, tests, and build.
+- Migration inventory, shared/high-contention planning, and target layout, presented as a plan and approved before any file moves.
+- Parallel-agent partitioning (one worktree per agent) with frozen routes, registries, shared barrels, and configuration.
 - Central reconciliation after independent feature moves.
-- Typecheck, full lint, relevant tests, old-path searches, export-surface checks, and final semantic-diff inspection.
+- Production build, typecheck, full lint, the full test suite, exercising the routes whose screens moved, old-path searches, export-surface checks, and final semantic-diff inspection, all compared with the baseline.
 
 **Example:**
 ```
@@ -164,9 +173,10 @@ User: "move all loose feature screens into screens/"
 - Command vs. query classification and naming conventions (`ArchiveTodoCommand`, `GetOverdueTodosQuery`, etc.).
 - Non-negotiable conventions: one folder per use case, `public sealed` MediatR handlers (`IRequestHandler<TRequest, ErrorOr<TResponse>>`), no manual DI registration for handlers/validators (assembly-scanned), `ErrorOr<T>` instead of throwing, validation via a MediatR `ValidationBehavior` pipeline behavior, user identity resolved from claims in the endpoint rather than injected into the handler.
 - Explicit route wiring into Carter modules (the one piece of an endpoint that isn't auto-discovered) and the `ApiResponse<T>`/`MatchResult` error-to-HTTP-status mapping.
-- Reference templates for command slices, query slices, endpoints, and MSTest unit/validator/integration tests.
-- Optional, opt-in notes on `HybridCache` for hot reads and MediatR's commercial licensing above its free tier — flagged, not applied by default.
-- A verification step (`dotnet build` && `dotnet test`).
+- Prerequisites (C# 12 / .NET 8 or later, and a check of MediatR's licensing terms) and a project-match check: the skill stops when the solution doesn't have the helpers and layout its templates assume.
+- Reference templates for command slices, query slices (with a validator when the query takes client input), endpoints, and MSTest unit/validator/integration tests.
+- An optional, opt-in note on `HybridCache` for hot reads — flagged, not applied by default.
+- A verification step (`dotnet build` && `dotnet test`). The integration tests need a SQL Server (LocalDB or `TEST_SQL_CONNECTION`); without one they are reported as written but not run.
 
 **Example:**
 ```
@@ -321,9 +331,11 @@ User: "/setup-agent-workflow audit"
 skills/
 ├── git-conventions/
 │   ├── SKILL.md
+│   ├── skill.json
 │   └── references/
 ├── react-architecture/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   └── references/
 ├── react-architecture-audit/
 │   └── SKILL.md
 ├── react-structural-migration/
@@ -347,9 +359,9 @@ skills/
 Each skill contains:
 
 * `SKILL.md` — Main instructions and behavior.
-* `references/` — Additional examples, documentation, and supporting material.
-* `scripts/` (optional) — Deterministic helpers the skill runs.
-* `evals/` (optional) — Test scenarios for the skill.
+* `references/` (optional) — Additional examples, documentation, and supporting material. `react-architecture-audit` and `react-structural-migration` have none.
+* `scripts/` (optional) — Deterministic helpers the skill runs. Only `setup-agent-workflow` has one.
+* `evals/` (optional) — Test scenarios for the skill. Only `setup-agent-workflow` has them.
 
 ---
 
@@ -371,8 +383,9 @@ When adding a new skill:
 
 1. Create a new folder under `skills/`.
 2. Add a `SKILL.md` file.
-3. Add a `references/` folder if supporting documentation is needed.
-4. Update the Available Skills table in this README.
+3. Add a `references/` folder if supporting documentation is needed, and link every file in it from `SKILL.md`.
+4. Add `scripts/` or `evals/` only if the skill needs them.
+5. Update the Available Skills table and the Repository Structure tree in this README.
 
 ---
 
